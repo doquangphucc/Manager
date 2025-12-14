@@ -724,6 +724,16 @@
       return `${h}:${m}:${s}`;
     }
 
+    function updateDashboardOpenDurations() {
+      const els = document.querySelectorAll('[data-open-att-start]');
+      els.forEach(el => {
+        const ts = el.getAttribute('data-open-att-start');
+        if (!ts) return;
+        const ms = Date.now() - new Date(ts).getTime();
+        el.innerText = fmtDurationMs(ms);
+      });
+    }
+
     // ============================
     //  AUTH
     // ============================
@@ -918,7 +928,7 @@
             <div class="font-medium">${escapeHtml(r.user_email || r.user_id)}</div>
             <div class="text-xs text-slate-500">Check-in: ${fmtTime(r.check_in_at)} • ${escapeHtml(r.check_in_note || '')}</div>
           </div>
-          <div class="font-mono font-semibold text-indigo-700">${fmtDurationMs(dur)}</div>
+          <div class="font-mono font-semibold text-indigo-700" data-open-att-start="${escapeHtml(r.check_in_at)}">${fmtDurationMs(dur)}</div>
         </div>`;
       }).join('');
     }
@@ -1075,7 +1085,7 @@
             <div class="text-lg font-bold text-gray-900">${escapeHtml(p.name)}</div>
           </div>
           <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Mã</div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Đơn vị</div>
             <div class="text-gray-700 font-mono">${escapeHtml(p.code || 'N/A')}</div>
           </div>
           <div>
@@ -1144,7 +1154,7 @@
         div.className = 'p-4 hover:bg-slate-50 transition-colors flex justify-between items-start gap-4';
         div.innerHTML = `
           <div class="min-w-0">
-            <div class="font-medium text-gray-900 truncate">${escapeHtml(pay.note || '')}</div>
+            <div class="font-medium text-gray-900 truncate">${escapeHtml(pay.note || '(no note)')}</div>
             <div class="text-xs text-gray-500 mt-1">${escapeHtml(new Date(pay.created_at).toLocaleString('vi-VN'))} • <span class="${statusBadge(pay.status)}">${escapeHtml(pay.status || 'pending')}</span></div>
           </div>
           <div class="text-right shrink-0">
@@ -1169,20 +1179,20 @@
 
         btnApprove.onclick = async () => {
           if (!requirePerm('finance.approve')) return;
-          const { error: upErr } = await db.from('payment_requests').update({ status: 'approved', approved_by: currentUser.id, approved_at: new Date().toISOString() }).eq('id', pay.id);
+          const { error: upErr } = await db.from('payment_requests').update({ status: 'approved' }).eq('id', pay.id);
           if (upErr) return toast('Lỗi duyệt', upErr.message, 'danger');
           await audit('finance.approve', 'payment_requests', pay.id, { status: 'approved' });
-          toast('Đã duyệt', pay.note || '(no note)', 'success');
+          toast('Đã duyệt', pay.note || 'Phiếu chi', 'success');
           loadFinance();
         };
 
         btnReject.onclick = async () => {
           if (!requirePerm('finance.approve')) return;
           const reason = prompt('Lý do từ chối (tuỳ chọn):') || null;
-          const { error: upErr } = await db.from('payment_requests').update({ status: 'rejected', reject_reason: reason, approved_by: currentUser.id, approved_at: new Date().toISOString() }).eq('id', pay.id);
+          const { error: upErr } = await db.from('payment_requests').update({ status: 'rejected' }).eq('id', pay.id);
           if (upErr) return toast('Lỗi từ chối', upErr.message, 'danger');
           await audit('finance.reject', 'payment_requests', pay.id, { status: 'rejected', reason });
-          toast('Đã từ chối', pay.note || '(no note)', 'warning');
+          toast('Đã từ chối', pay.note || 'Phiếu chi', 'warning');
           loadFinance();
         };
 
@@ -1204,8 +1214,8 @@
       const { error } = await db.from('payment_requests').insert([{
         project_id: projectId,
         requester_id: currentUser.id,
-        note,
         amount,
+        note,
         status: 'pending'
       }]);
       showLoading(false);
@@ -1246,7 +1256,6 @@
               <div class="text-gray-700">${escapeHtml(new Date(pay.created_at).toLocaleString('vi-VN'))}</div>
             </div>
           </div>
-          ${pay.reject_reason ? `<div><div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Lý do từ chối</div><div class="text-gray-700">${escapeHtml(pay.reject_reason)}</div></div>` : ''}
         </div>
       `;
       openModal('Chi tiết phiếu chi', html);
@@ -1345,7 +1354,12 @@
       for (const t of data) {
         div.innerHTML += `
           <div class="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-100">
-            <span class="${t.type === 'export' ? 'text-rose-600' : 'text-emerald-600'} font-medium text-xs uppercase">${escapeHtml(t.type)}</span>
+            <div class="min-w-0">
+              <div class="text-xs font-semibold ${t.type === 'export' ? 'text-rose-600' : 'text-emerald-600'} uppercase">
+                ${t.type === 'export' ? '📤 Xuất' : (t.type === 'import' ? '📥 Nhập' : escapeHtml(t.type || ''))}
+              </div>
+              <div class="text-[11px] text-slate-500">${escapeHtml(new Date(t.created_at).toLocaleString('vi-VN'))}</div>
+            </div>
             <span class="font-mono font-bold">${Number(t.quantity || 0)}</span>
           </div>
         `;
@@ -1360,7 +1374,7 @@
       const transHtml = (transactions && transactions.length)
         ? `<div class="bg-slate-50 rounded-lg p-3 space-y-2 mt-2">${transactions.map(t => `
             <div class="flex justify-between text-sm border-b border-slate-200 pb-1 last:border-0">
-              <span>${t.type === 'export' ? '📤 Xuất' : '📥 Nhập'} (${Number(t.quantity || 0)})</span>
+              <span>${t.type === 'export' ? '📤 Xuất' : (t.type === 'import' ? '📥 Nhập' : '⚙️ Điều chỉnh')} (${Number(t.quantity || 0)})</span>
               <span class="text-gray-500 text-xs">${escapeHtml(new Date(t.created_at).toLocaleString('vi-VN'))}</span>
             </div>
           `).join('')}</div>`
@@ -1373,7 +1387,7 @@
             <div class="text-lg font-bold text-gray-900">${escapeHtml(item.name)}</div>
           </div>
           <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Mã</div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Đơn vị</div>
             <div class="text-gray-700 font-mono">${escapeHtml(item.unit || 'N/A')}</div>
           </div>
         </div>
@@ -1396,7 +1410,7 @@
       document.getElementById('clock').innerText = new Date().toLocaleTimeString('vi-VN');
       // update dashboard open durations if currently on dashboard
       if (!document.getElementById('tab-dashboard').classList.contains('hidden')) {
-        // light update
+        updateDashboardOpenDurations();
       }
     }, 1000);
 
@@ -1747,7 +1761,7 @@
             <div class="text-xs text-gray-500 max-w-[260px] truncate">${escapeHtml(l.reason || '')}</div>
           </div>
           <div class="text-right">
-            <div>${statusBadge(l.status || 'pending')}</div>
+            <div><span class="${statusBadge(l.status || 'pending')}">${escapeHtml(l.status || 'pending')}</span></div>
           </div>
         `;
         list.appendChild(div);
