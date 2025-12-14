@@ -1,0 +1,2086 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ERP PRO • RBAC • Supabase (Single File)</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: { primary: '#4f46e5', secondary: '#64748b' },
+        },
+      },
+    };
+  </script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    body { background-color: #f8fafc; }
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    .fade-in { animation: fadeIn .2s ease-in-out; }
+    .slide-up { animation: slideUp .25s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .loader { border: 4px solid #f3f3f3; border-top: 4px solid #4f46e5; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+
+<body class="text-slate-900 h-screen overflow-hidden flex flex-col md:flex-row">
+
+  <!-- Toasts -->
+  <div id="toastHost" class="fixed top-4 right-4 z-[999] space-y-2"></div>
+
+  <!-- Login -->
+  <div id="loginScreen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-100 p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 text-center space-y-6 slide-up border border-slate-200">
+      <div class="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto text-indigo-600 mb-4">
+        <i data-lucide="briefcase" class="w-8 h-8"></i>
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Đăng Nhập ERP</h1>
+        <p class="text-gray-500 mt-2 text-sm">Đăng nhập để truy cập hệ thống phân quyền.</p>
+      </div>
+      <div class="space-y-4 text-left">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input type="email" id="email" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all" placeholder="user@example.com" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label>
+          <input type="password" id="password" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all" placeholder="••••••••" />
+        </div>
+        <button id="btnLogin" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg shadow transition-all flex justify-center items-center gap-2">
+          <i data-lucide="log-in" class="w-4 h-4"></i> Đăng Nhập
+        </button>
+        <p class="text-xs text-gray-500 leading-5">
+          * Lưu ý: tạo tài khoản mới (Giám đốc) cần Edge Function backend (không thể làm an toàn chỉ bằng client).
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div id="appLayout" class="hidden w-full h-full flex">
+
+    <!-- Sidebar -->
+    <aside class="w-72 bg-white border-r border-slate-200 flex flex-col shadow-sm z-10 hidden md:flex">
+      <div class="p-6 flex items-center gap-3 border-b border-slate-100">
+        <div class="bg-indigo-600 p-2 rounded-lg text-white"><i data-lucide="briefcase" class="w-5 h-5"></i></div>
+        <div>
+          <h1 class="font-bold text-xl text-slate-800 tracking-tight">ERP PRO</h1>
+          <p class="text-xs text-slate-500">RBAC • Audit • Attendance Photo</p>
+        </div>
+      </div>
+
+      <nav class="flex-1 p-4 space-y-1 overflow-y-auto">
+        <button data-tab="dashboard" class="menu-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900" id="nav-dashboard">
+          <i data-lucide="layout-dashboard" class="w-5 h-5"></i> Dashboard
+        </button>
+        <button data-tab="projects" class="menu-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900" id="nav-projects">
+          <i data-lucide="folder-kanban" class="w-5 h-5"></i> Dự Án & Task
+        </button>
+        <button data-tab="finance" class="menu-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900" id="nav-finance">
+          <i data-lucide="banknote" class="w-5 h-5"></i> Tài Chính
+        </button>
+        <button data-tab="inventory" class="menu-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900" id="nav-inventory">
+          <i data-lucide="package" class="w-5 h-5"></i> Kho & Tài Sản
+        </button>
+        <button data-tab="hr" class="menu-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900" id="nav-hr">
+          <i data-lucide="users" class="w-5 h-5"></i> Nhân Sự
+        </button>
+
+        <div class="pt-4 mt-4 border-t border-slate-100">
+          <p class="px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Quản trị</p>
+          <button data-tab="admin" class="menu-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900" id="nav-admin">
+            <i data-lucide="shield" class="w-5 h-5"></i> Tài khoản & Quyền
+          </button>
+          <button data-tab="audit" class="menu-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900" id="nav-audit">
+            <i data-lucide="activity" class="w-5 h-5"></i> Nhật ký hệ thống
+          </button>
+        </div>
+      </nav>
+
+      <div class="p-4 border-t border-slate-100">
+        <div class="flex items-center gap-3 px-4 py-3 bg-slate-50 rounded-xl mb-3">
+          <div class="bg-indigo-100 p-1.5 rounded-full text-indigo-600"><i data-lucide="user-circle" class="w-6 h-6"></i></div>
+          <div class="overflow-hidden">
+            <p class="text-sm font-semibold text-slate-700 truncate" id="userEmail">...</p>
+            <p class="text-xs text-slate-500 truncate" id="userRoleBadge">...</p>
+          </div>
+        </div>
+        <button id="btnLogout" class="w-full flex items-center justify-center gap-2 text-rose-600 hover:bg-rose-50 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          <i data-lucide="log-out" class="w-4 h-4"></i> Đăng Xuất
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 overflow-y-auto bg-slate-50 h-screen relative">
+
+      <div class="md:hidden bg-white p-4 flex justify-between items-center border-b sticky top-0 z-20">
+        <span class="font-bold text-indigo-600 text-lg">ERP PRO</span>
+        <div class="flex gap-4">
+          <button data-tab="dashboard"><i data-lucide="layout-dashboard" class="text-gray-500"></i></button>
+          <button data-tab="hr"><i data-lucide="users" class="text-gray-500"></i></button>
+          <button id="btnLogoutMobile"><i data-lucide="log-out" class="text-red-500"></i></button>
+        </div>
+      </div>
+
+      <div class="max-w-7xl mx-auto p-6 md:p-10 pb-24">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <div>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-800" id="pageTitle">DASHBOARD</h2>
+            <p class="text-sm text-slate-500" id="pageSubtitle">Tổng quan hệ thống</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="scopeBadge" class="hidden px-3 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700"></span>
+            <button id="btnRefresh" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-sm">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i> Làm mới
+            </button>
+          </div>
+        </div>
+
+        <!-- DASHBOARD -->
+        <section id="tab-dashboard" class="module space-y-6 fade-in">
+          <div class="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-lg">
+            <h2 class="text-2xl font-bold mb-2">Xin chào! 👋</h2>
+            <p class="opacity-90">Hệ thống ERP Pro đang hoạt động với phân quyền theo vai trò.</p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <p class="text-sm font-medium text-gray-500 mb-1">Dự Án</p>
+              <h3 class="text-3xl font-bold text-gray-800" id="countProjects">0</h3>
+            </div>
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <p class="text-sm font-medium text-gray-500 mb-1">Task</p>
+              <h3 class="text-3xl font-bold text-gray-800" id="countTasks">0</h3>
+            </div>
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <p class="text-sm font-medium text-gray-500 mb-1">Phiếu Chi</p>
+              <h3 class="text-3xl font-bold text-gray-800" id="countFinance">0</h3>
+            </div>
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <p class="text-sm font-medium text-gray-500 mb-1">Chấm công hôm nay</p>
+              <h3 class="text-3xl font-bold text-gray-800" id="countAttendanceToday">0</h3>
+            </div>
+          </div>
+
+          <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-bold text-lg text-gray-800">Check-in đang mở</h3>
+              <span class="text-xs text-slate-500">Tự động theo RLS</span>
+            </div>
+            <div id="dashboardOpenAttendance" class="text-sm text-slate-600">Loading...</div>
+          </div>
+        </section>
+
+        <!-- PROJECTS -->
+        <section id="tab-projects" class="module hidden fade-in space-y-6">
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-7 space-y-4">
+              <div class="flex justify-between items-center">
+                <div>
+                  <h3 class="font-bold text-lg text-gray-700">Danh sách Dự Án</h3>
+                  <p class="text-xs text-slate-500">Nhân viên chỉ thấy dự án có task của mình.</p>
+                </div>
+                <button id="btnAddProject" class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-all">
+                  <i data-lucide="plus" class="w-4 h-4"></i> Tạo Mới
+                </button>
+              </div>
+              <div id="projectList" class="space-y-3">Loading...</div>
+            </div>
+
+            <div class="lg:col-span-5">
+              <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 sticky top-6">
+                <div class="border-b border-gray-100 pb-4 mb-4">
+                  <h3 class="font-bold text-lg text-gray-800" id="taskHeader">Chọn dự án để xem Task</h3>
+                  <p class="text-xs text-gray-500 mt-1">Task theo phân quyền: Giám đốc/Quản lý/Người được giao.</p>
+                </div>
+
+                <div id="taskSection" class="hidden space-y-4">
+                  <div class="flex gap-2">
+                    <input type="text" id="newTaskInput" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Nhập việc cần làm..." />
+                    <button id="btnAddTask" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                      <i data-lucide="plus"></i>
+                    </button>
+                  </div>
+                  <div id="taskList" class="space-y-2 max-h-[520px] overflow-y-auto pr-1"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- FINANCE -->
+        <section id="tab-finance" class="module hidden fade-in space-y-6">
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-1">
+              <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                <h3 class="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2">
+                  <i data-lucide="plus-circle" class="text-indigo-600 w-5 h-5"></i> Tạo Phiếu Chi
+                </h3>
+                <div class="space-y-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Dự Án</label>
+                    <select id="financeProjectSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"></select>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nội dung</label>
+                    <input type="text" id="financeTitle" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Ví dụ: Mua văn phòng phẩm" />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Số tiền (VNĐ)</label>
+                    <input type="number" id="financeAmount" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="0" />
+                  </div>
+                  <button id="btnCreatePayment" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-lg shadow-sm transition-all mt-2">Gửi Yêu Cầu</button>
+                </div>
+              </div>
+
+              <div class="mt-6 bg-white rounded-xl border border-slate-200 shadow-sm p-6" id="financeApprovalBox">
+                <h3 class="font-bold text-lg text-gray-800 mb-3 flex items-center gap-2">
+                  <i data-lucide="stamp" class="text-rose-600 w-5 h-5"></i> Phê duyệt
+                </h3>
+                <p class="text-sm text-slate-600">Chỉ Giám đốc/Quản lý có quyền duyệt / từ chối phiếu.</p>
+              </div>
+            </div>
+
+            <div class="lg:col-span-2">
+              <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+                  <h3 class="font-bold text-lg text-gray-800">Lịch Sử Chi Tiêu</h3>
+                  <select id="financeFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                    <option value="all">Tất cả</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+                <div class="p-0">
+                  <div id="financeList" class="divide-y divide-gray-100">Loading...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- INVENTORY -->
+        <section id="tab-inventory" class="module hidden fade-in space-y-6">
+          <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div class="lg:col-span-3">
+              <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 min-h-[520px]">
+                <div class="flex justify-between items-center mb-6">
+                  <div>
+                    <h3 class="font-bold text-lg text-gray-800 flex items-center gap-2"><i data-lucide="package" class="text-amber-600"></i> Tồn Kho</h3>
+                    <p class="text-xs text-slate-500">Giao dịch kho chạy atomically qua RPC (tránh sai số).</p>
+                  </div>
+                  <button id="btnAddNewItem" class="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium transition-all">
+                    <i data-lucide="plus" class="w-4 h-4"></i> Thêm Đồ Mới
+                  </button>
+                </div>
+                <div id="inventoryList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+              </div>
+            </div>
+
+            <div class="lg:col-span-1 space-y-6">
+              <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                <h3 class="font-bold text-lg text-gray-800 mb-4">Giao Dịch</h3>
+                <div class="space-y-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Loại GD</label>
+                    <select id="invType" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                      <option value="export">📤 XUẤT (Đi dự án)</option>
+                      <option value="import">📥 NHẬP (Về kho)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Vật phẩm</label>
+                    <select id="invItemSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"></select>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Dự án</label>
+                    <select id="invProjectSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"></select>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Số lượng</label>
+                    <input type="number" id="invQty" value="1" min="1" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                  <button id="btnSubmitTransaction" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-lg shadow-sm transition-all">Thực Hiện</button>
+                  <p class="text-xs text-slate-500">Chỉ Giám đốc/Quản lý được phép giao dịch kho.</p>
+                </div>
+              </div>
+
+              <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                <h4 class="font-bold text-sm text-gray-500 uppercase mb-3">Lịch sử gần đây</h4>
+                <div id="invHistoryList" class="space-y-3 text-sm">Loading...</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- HR -->
+        <section id="tab-hr" class="module hidden fade-in space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 relative overflow-hidden">
+              <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
+
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Thời gian thực</p>
+                  <h1 id="clock" class="text-5xl font-mono font-bold text-gray-800 tracking-tighter">00:00:00</h1>
+                </div>
+                <div class="text-right">
+                  <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Đang làm</p>
+                  <p id="workTimer" class="text-2xl font-mono font-bold text-indigo-700">00:00:00</p>
+                </div>
+              </div>
+
+              <div class="mt-8">
+                <div id="checkinPanel" class="max-w-md mx-auto space-y-3">
+                  <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                    <p class="text-sm font-semibold text-slate-800 flex items-center gap-2"><i data-lucide="camera" class="w-4 h-4"></i> Ảnh Check-in (bắt buộc)</p>
+                    <p class="text-xs text-slate-500 mt-1">Chụp ảnh trực tiếp hoặc chọn ảnh. Hệ thống lưu vào Storage riêng.</p>
+
+                    <div class="mt-3 grid grid-cols-1 gap-3">
+                      <input id="checkinPhoto" type="file" accept="image/*" capture="user" class="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
+                      <input id="checkinNote" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ghi chú (tuỳ chọn)" />
+                      <div class="hidden" id="checkinPreviewWrap">
+                        <img id="checkinPreview" class="w-full rounded-xl border border-slate-200" alt="preview" />
+                      </div>
+                    </div>
+
+                    <div class="mt-4 flex gap-2">
+                      <button id="btnCheckIn" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex justify-center items-center gap-2">
+                        <i data-lucide="map-pin" class="w-5 h-5"></i> CHECK IN
+                      </button>
+                      <button id="btnGeo" class="px-4 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-sm font-semibold flex items-center gap-2">
+                        <i data-lucide="map" class="w-4 h-4"></i> Vị trí
+                      </button>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-3" id="geoStatus">Vị trí: chưa lấy.</p>
+                  </div>
+                </div>
+
+                <div id="checkoutPanel" class="hidden max-w-md mx-auto space-y-3">
+                  <div class="bg-emerald-50 text-emerald-700 px-4 py-3 rounded-lg text-sm border border-emerald-100">
+                    Đang check-in từ <strong id="inTimeDisplay">--:--</strong>. (Tự động đếm giờ)
+                  </div>
+                  <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                    <p class="text-sm font-semibold text-slate-800 flex items-center gap-2"><i data-lucide="log-out" class="w-4 h-4"></i> Check-out</p>
+                    <p class="text-xs text-slate-500 mt-1">Bạn có thể thêm ảnh check-out để tăng độ tin cậy (tuỳ chọn).</p>
+                    <div class="mt-3 grid grid-cols-1 gap-3">
+                      <input id="checkoutPhoto" type="file" accept="image/*" capture="user" class="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100" />
+                      <input id="checkoutNote" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ghi chú check-out (tuỳ chọn)" />
+                    </div>
+                    <button id="btnCheckOut" class="w-full mt-4 bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex justify-center items-center gap-2">
+                      <i data-lucide="log-out" class="w-5 h-5"></i> CHECK OUT
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="space-y-6">
+              <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 class="font-bold text-lg text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="history" class="text-indigo-600"></i> Lịch sử chấm công</h3>
+                    <p class="text-xs text-slate-500">Giám đốc thấy tất cả • Quản lý thấy đội mình • Nhân viên thấy của mình.</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <input id="attFrom" type="date" class="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
+                    <input id="attTo" type="date" class="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
+                    <button id="btnLoadAttendance" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-sm">Lọc</button>
+                  </div>
+                </div>
+
+                <div class="mt-4" id="attUserFilterWrap">
+                  <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Lọc theo tài khoản</label>
+                  <select id="attUserFilter" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"></select>
+                </div>
+
+                <div class="mt-4 overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="text-left text-slate-500 border-b">
+                        <th class="py-2">Ngày</th>
+                        <th class="py-2">Tài khoản</th>
+                        <th class="py-2">Check-in</th>
+                        <th class="py-2">Check-out</th>
+                        <th class="py-2">Thời lượng</th>
+                        <th class="py-2">Ảnh</th>
+                        <th class="py-2">Chi tiết</th>
+                      </tr>
+                    </thead>
+                    <tbody id="attendanceTable" class="divide-y"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                <h3 class="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2"><i data-lucide="calendar-days" class="text-purple-600"></i> Xin Nghỉ Phép</h3>
+                <div class="grid grid-cols-1 gap-3">
+                  <input type="date" id="leaveStart" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  <textarea id="leaveReason" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows="3" placeholder="Lý do... (tuỳ chọn)"></textarea>
+                  <button id="btnSubmitLeave" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg">Gửi Đơn</button>
+                </div>
+                <div class="mt-4">
+                  <h4 class="font-bold text-sm text-gray-500 uppercase mb-2">Lịch sử đơn nghỉ</h4>
+                  <div id="hrLeaveHistoryList" class="space-y-2">Loading...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ADMIN -->
+        <section id="tab-admin" class="module hidden fade-in space-y-6">
+          <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h3 class="font-bold text-lg text-gray-800 flex items-center gap-2"><i data-lucide="shield" class="text-indigo-600"></i> Quản lý tài khoản</h3>
+                <p class="text-sm text-slate-600 mt-1">Giám đốc có toàn quyền: tạo/sửa/xoá (xoá mềm)/phân quyền. Quản lý chỉ xem trong phạm vi đội.</p>
+              </div>
+              <span class="text-xs text-slate-500">Bảo mật: RLS + policy + audit</span>
+            </div>
+
+            <div class="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div class="lg:col-span-5">
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-5">
+                  <h4 class="font-bold text-sm text-slate-700 uppercase tracking-wider mb-3">Tạo tài khoản mới (Director)</h4>
+                  <div class="space-y-3">
+                    <input id="newUserEmail" type="email" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Email" />
+                    <input id="newUserTempPass" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Mật khẩu tạm (khuyến nghị)" />
+                    <input id="newUserFullName" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Họ tên" />
+                    <div class="grid grid-cols-2 gap-2">
+                      <select id="newUserRole" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                        <option value="employee">Nhân Viên</option>
+                        <option value="manager">Quản Lý</option>
+                        <option value="director">Giám Đốc</option>
+                      </select>
+                      <select id="newUserManager" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                        <option value="">(Chọn quản lý)</option>
+                      </select>
+                    </div>
+                    <button id="btnCreateUser" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg">Tạo account</button>
+                    <p class="text-xs text-slate-500 leading-5">* Nút này gọi Edge Function (service role) để tạo auth user + profile an toàn.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="lg:col-span-7">
+                <div class="flex items-center justify-between mb-3 gap-3">
+                  <div class="flex-1">
+                    <input id="userSearch" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Tìm theo email / tên..." />
+                  </div>
+                  <button id="btnReloadUsers" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-sm">Tải lại</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="text-left text-slate-500 border-b">
+                        <th class="py-2">Email</th>
+                        <th class="py-2">Họ tên</th>
+                        <th class="py-2">Role</th>
+                        <th class="py-2">Trạng thái</th>
+                        <th class="py-2">Hành động</th>
+                      </tr>
+                    </thead>
+                    <tbody id="usersTable" class="divide-y"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- AUDIT -->
+        <section id="tab-audit" class="module hidden fade-in space-y-6">
+          <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <h3 class="font-bold text-lg text-gray-800 flex items-center gap-2"><i data-lucide="activity" class="text-amber-600"></i> Nhật ký hệ thống</h3>
+                <p class="text-sm text-slate-600 mt-1">Ghi lại thay đổi quan trọng (role, checkin/checkout, duyệt phiếu...).</p>
+              </div>
+              <button id="btnLoadAudit" class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-sm">Tải log</button>
+            </div>
+
+            <div class="mt-4 overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-left text-slate-500 border-b">
+                    <th class="py-2">Thời gian</th>
+                    <th class="py-2">Actor</th>
+                    <th class="py-2">Hành động</th>
+                    <th class="py-2">Đối tượng</th>
+                    <th class="py-2">Chi tiết</th>
+                  </tr>
+                </thead>
+                <tbody id="auditTable" class="divide-y"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="loadingOverlay" class="hidden fixed inset-0 z-[100] bg-white/80 backdrop-blur-sm flex items-center justify-center">
+    <div class="loader"></div>
+  </div>
+
+  <!-- Modal -->
+  <div id="detailModal" class="hidden fixed inset-0 z-[90] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="modalBackdrop"></div>
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden relative z-10 slide-up max-h-[90vh] overflow-y-auto">
+      <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+        <h3 class="text-lg font-bold text-gray-800" id="modalTitle">Chi Tiết</h3>
+        <button id="btnCloseModal" class="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-200 transition">
+          <i data-lucide="x-circle" class="w-6 h-6"></i>
+        </button>
+      </div>
+      <div class="p-6" id="modalContent"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    // ============================
+    //  CONFIG
+    // ============================
+    const SUPABASE_URL = 'https://qywkqblsyfmooimpevse.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5d2txYmxzeWZtb29pbXBldnNlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1NDEyOTIsImV4cCI6MjA4MTExNzI5Mn0.jAvhGwaVDqq6H_Jfo8MtGvZBqrsNFq3WYhNZN0SnoJU';
+
+    // Edge function URL (required for secure user creation + optionally signed urls)
+    // Example: https://<project-ref>.functions.supabase.co/admin-create-user
+    const EDGE_CREATE_USER_URL = 'REPLACE_WITH_EDGE_FUNCTION_URL_OR_LEAVE_EMPTY';
+
+    const { createClient } = supabase;
+    const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
+
+    // ============================
+    //  STATE
+    // ============================
+    let session = null;
+    let currentUser = null;
+    let profile = null; // { id, email, full_name, role, manager_id, is_active }
+
+    let activeProjectId = null;
+    let activeProjectName = '';
+
+    let geo = null; // {lat, lng, acc}
+
+    // HR timer
+    let openAttendance = null; // attendance row with check_out_at null
+    let timerInterval = null;
+
+    // ============================
+    //  RBAC
+    // ============================
+    const ROLE_LABEL = {
+      director: 'Giám Đốc',
+      manager: 'Quản Lý',
+      employee: 'Nhân Viên',
+    };
+
+    const ACL = {
+      // account & policies
+      'user.manage': ['director'],
+      'user.view_scope': ['director', 'manager'],
+
+      // projects/tasks
+      'project.create': ['director', 'manager'],
+      'project.view': ['director', 'manager', 'employee'],
+      'task.create': ['director', 'manager'],
+      'task.update_status': ['director', 'manager', 'employee'],
+
+      // finance
+      'finance.create': ['director', 'manager', 'employee'],
+      'finance.approve': ['director', 'manager'],
+
+      // inventory
+      'inventory.view': ['director', 'manager', 'employee'],
+      'inventory.manage': ['director', 'manager'],
+
+      // hr
+      'hr.checkin': ['director', 'manager', 'employee'],
+      'hr.view': ['director', 'manager', 'employee'],
+      'audit.view': ['director', 'manager'],
+    };
+
+    function hasPerm(perm) {
+      const allow = ACL[perm] || [];
+      return allow.includes(profile?.role);
+    }
+
+    function requirePerm(perm, friendly = 'Bạn không có quyền thực hiện thao tác này.') {
+      if (!hasPerm(perm)) {
+        toast('Không đủ quyền', friendly, 'warning');
+        return false;
+      }
+      return true;
+    }
+
+    // ============================
+    //  UI HELPERS
+    // ============================
+    function showLoading(on) {
+      document.getElementById('loadingOverlay').classList.toggle('hidden', !on);
+    }
+
+    function toast(title, message, type = 'info') {
+      const host = document.getElementById('toastHost');
+      const colors = {
+        info: 'border-slate-200 bg-white',
+        success: 'border-emerald-200 bg-emerald-50',
+        warning: 'border-amber-200 bg-amber-50',
+        danger: 'border-rose-200 bg-rose-50',
+      };
+      const div = document.createElement('div');
+      div.className = `w-[360px] max-w-[90vw] border ${colors[type] || colors.info} shadow-sm rounded-xl p-4 slide-up`;
+      div.innerHTML = `
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="font-semibold text-slate-900">${escapeHtml(title)}</div>
+            <div class="text-sm text-slate-600 mt-1">${escapeHtml(message)}</div>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600" aria-label="close">✕</button>
+        </div>
+      `;
+      div.querySelector('button').onclick = () => div.remove();
+      host.appendChild(div);
+      setTimeout(() => { if (div.isConnected) div.remove(); }, 4500);
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;','\'':'&#39;'}[c] || c));
+    }
+
+    function openModal(title, html) {
+      document.getElementById('modalTitle').innerText = title;
+      document.getElementById('modalContent').innerHTML = html;
+      document.getElementById('detailModal').classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      lucide.createIcons();
+    }
+
+    function closeModal() {
+      document.getElementById('detailModal').classList.add('hidden');
+      document.body.style.overflow = '';
+    }
+
+    function badgeRole(role) {
+      const map = {
+        director: 'bg-rose-100 text-rose-700 border-rose-200',
+        manager: 'bg-amber-100 text-amber-800 border-amber-200',
+        employee: 'bg-slate-100 text-slate-700 border-slate-200',
+      };
+      return `<span class="px-2 py-0.5 rounded-full text-xs font-semibold border ${map[role] || map.employee}">${escapeHtml(ROLE_LABEL[role] || role)}</span>`;
+    }
+
+    function statusBadge(status) {
+      const s = String(status || '').toLowerCase();
+      const base = 'px-2.5 py-0.5 rounded-full text-xs font-semibold border uppercase tracking-wide ';
+      if (s.includes('approved') || s.includes('completed')) return base + 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      if (s.includes('rejected')) return base + 'bg-rose-100 text-rose-800 border-rose-200';
+      if (s.includes('running') || s.includes('active')) return base + 'bg-blue-100 text-blue-800 border-blue-200';
+      return base + 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    }
+
+    function fmtTime(ts) {
+      if (!ts) return '--:--';
+      return new Date(ts).toLocaleTimeString('vi-VN');
+    }
+
+    function fmtDate(tsOrDate) {
+      if (!tsOrDate) return '';
+      const d = new Date(tsOrDate);
+      return d.toLocaleDateString('vi-VN');
+    }
+
+    function fmtDurationMs(ms) {
+      if (!Number.isFinite(ms) || ms < 0) ms = 0;
+      const total = Math.floor(ms / 1000);
+      const h = String(Math.floor(total / 3600)).padStart(2,'0');
+      const m = String(Math.floor((total % 3600) / 60)).padStart(2,'0');
+      const s = String(total % 60).padStart(2,'0');
+      return `${h}:${m}:${s}`;
+    }
+
+    // ============================
+    //  AUTH
+    // ============================
+    async function initAuth() {
+      const { data: s } = await db.auth.getSession();
+      session = s.session;
+      if (session) {
+        currentUser = session.user;
+        await bootApp();
+      } else {
+        showLogin();
+      }
+
+      db.auth.onAuthStateChange(async (_event, _session) => {
+        session = _session;
+        if (_session) {
+          currentUser = _session.user;
+          await bootApp();
+        } else {
+          profile = null;
+          currentUser = null;
+          showLogin();
+        }
+      });
+    }
+
+    async function signIn(email, password) {
+      showLoading(true);
+      const { error } = await db.auth.signInWithPassword({ email, password });
+      showLoading(false);
+      if (error) {
+        toast('Đăng nhập thất bại', error.message, 'danger');
+      }
+    }
+
+    async function signOut() {
+      await db.auth.signOut();
+      location.reload();
+    }
+
+    function showLogin() {
+      document.getElementById('loginScreen').classList.remove('hidden');
+      document.getElementById('appLayout').classList.add('hidden');
+      lucide.createIcons();
+    }
+
+    async function bootApp() {
+      // load profile
+      const { data, error } = await db.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+      if (error) {
+        toast('Lỗi tải hồ sơ', error.message, 'danger');
+        return;
+      }
+      profile = data;
+
+      if (!profile || profile.is_active === false) {
+        toast('Tài khoản bị vô hiệu', 'Vui lòng liên hệ Giám đốc để kích hoạt lại.', 'danger');
+        await signOut();
+        return;
+      }
+
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('appLayout').classList.remove('hidden');
+      document.getElementById('userEmail').innerText = profile.email || currentUser.email || '...';
+      document.getElementById('userRoleBadge').innerHTML = badgeRole(profile.role);
+
+      // scope badge
+      const scope = document.getElementById('scopeBadge');
+      if (profile.role === 'director') {
+        scope.innerText = 'Scope: TOÀN HỆ THỐNG';
+        scope.classList.remove('hidden');
+      } else if (profile.role === 'manager') {
+        scope.innerText = 'Scope: ĐỘI NHÓM';
+        scope.classList.remove('hidden');
+      } else {
+        scope.classList.add('hidden');
+      }
+
+      applyRoleToUI();
+
+      // init
+      switchTab('dashboard');
+      await refreshAll();
+
+      lucide.createIcons();
+    }
+
+    function applyRoleToUI() {
+      // admin tab visibility
+      document.getElementById('nav-admin').classList.toggle('hidden', !(profile.role === 'director' || profile.role === 'manager'));
+      document.getElementById('nav-audit').classList.toggle('hidden', !(profile.role === 'director' || profile.role === 'manager'));
+
+      // buttons
+      document.getElementById('btnAddProject').classList.toggle('opacity-50', !hasPerm('project.create'));
+      document.getElementById('btnAddProject').disabled = !hasPerm('project.create');
+
+      document.getElementById('btnAddTask').classList.toggle('opacity-50', !hasPerm('task.create'));
+      document.getElementById('btnAddTask').disabled = !hasPerm('task.create');
+
+      document.getElementById('btnSubmitTransaction').classList.toggle('opacity-50', !hasPerm('inventory.manage'));
+      document.getElementById('btnSubmitTransaction').disabled = !hasPerm('inventory.manage');
+
+      document.getElementById('btnAddNewItem').classList.toggle('opacity-50', !hasPerm('inventory.manage'));
+      document.getElementById('btnAddNewItem').disabled = !hasPerm('inventory.manage');
+
+      // admin create user
+      document.getElementById('btnCreateUser').classList.toggle('opacity-50', !hasPerm('user.manage'));
+      document.getElementById('btnCreateUser').disabled = !hasPerm('user.manage');
+
+      // attendance user filter only for director/manager
+      document.getElementById('attUserFilterWrap').classList.toggle('hidden', !(profile.role === 'director' || profile.role === 'manager'));
+    }
+
+    // ============================
+    //  TABS
+    // ============================
+    function switchTab(tabId) {
+      document.querySelectorAll('.module').forEach(el => el.classList.add('hidden'));
+      const tab = document.getElementById('tab-' + tabId);
+      if (tab) tab.classList.remove('hidden');
+
+      document.querySelectorAll('.menu-item').forEach(el => {
+        el.classList.remove('bg-indigo-50', 'text-indigo-700', 'shadow-sm');
+        el.classList.add('text-slate-600');
+      });
+      const activeNav = document.getElementById('nav-' + tabId);
+      if (activeNav) {
+        activeNav.classList.remove('text-slate-600');
+        activeNav.classList.add('bg-indigo-50', 'text-indigo-700', 'shadow-sm');
+      }
+
+      const title = {
+        dashboard: ['DASHBOARD', 'Tổng quan hệ thống'],
+        projects: ['QUẢN LÝ DỰ ÁN', 'Dự án & task theo phân quyền'],
+        finance: ['TÀI CHÍNH', 'Phiếu chi và phê duyệt'],
+        inventory: ['KHO & TÀI SẢN', 'Tồn kho + giao dịch atomically'],
+        hr: ['NHÂN SỰ', 'Chấm công ảnh + lịch sử'],
+        admin: ['TÀI KHOẢN & QUYỀN', 'Phân quyền siêu chi tiết (RLS)'],
+        audit: ['NHẬT KÝ HỆ THỐNG', 'Audit trail'],
+      };
+      document.getElementById('pageTitle').innerText = (title[tabId] || ['ERP'])[0];
+      document.getElementById('pageSubtitle').innerText = (title[tabId] || ['', ''])[1];
+
+      // lazy loads
+      if (tabId === 'projects') loadProjects();
+      if (tabId === 'finance') loadFinance();
+      if (tabId === 'inventory') loadInventory();
+      if (tabId === 'hr') loadHR();
+      if (tabId === 'admin') loadUsers();
+      if (tabId === 'audit') loadAudit();
+
+      lucide.createIcons();
+    }
+
+    async function refreshAll() {
+      await loadDashboard();
+      if (!document.getElementById('tab-projects').classList.contains('hidden')) await loadProjects();
+      if (!document.getElementById('tab-finance').classList.contains('hidden')) await loadFinance();
+      if (!document.getElementById('tab-inventory').classList.contains('hidden')) await loadInventory();
+      if (!document.getElementById('tab-hr').classList.contains('hidden')) await loadHR();
+      if (!document.getElementById('tab-admin').classList.contains('hidden')) await loadUsers();
+      if (!document.getElementById('tab-audit').classList.contains('hidden')) await loadAudit();
+    }
+
+    // ============================
+    //  DASHBOARD
+    // ============================
+    async function loadDashboard() {
+      const [{ count: cProjects }, { count: cTasks }, { count: cFinance }, { count: cAttToday }] = await Promise.all([
+        db.from('projects').select('*', { count: 'exact', head: true }),
+        db.from('tasks').select('*', { count: 'exact', head: true }),
+        db.from('payment_requests').select('*', { count: 'exact', head: true }),
+        db.from('attendance').select('*', { count: 'exact', head: true }).eq('check_in_date', todayLocalDate()),
+      ]);
+
+      document.getElementById('countProjects').innerText = cProjects || 0;
+      document.getElementById('countTasks').innerText = cTasks || 0;
+      document.getElementById('countFinance').innerText = cFinance || 0;
+      document.getElementById('countAttendanceToday').innerText = cAttToday || 0;
+
+      // open attendance list
+      const { data: open } = await db.from('attendance_view').select('*').is('check_out_at', null).order('check_in_at', { ascending: false }).limit(10);
+      const box = document.getElementById('dashboardOpenAttendance');
+      if (!open || open.length === 0) {
+        box.innerHTML = '<div class="text-slate-500">Không có check-in đang mở.</div>';
+        return;
+      }
+      box.innerHTML = open.map(r => {
+        const dur = Date.now() - new Date(r.check_in_at).getTime();
+        return `<div class="flex items-center justify-between py-2 border-b last:border-0">
+          <div>
+            <div class="font-medium">${escapeHtml(r.user_email || r.user_id)}</div>
+            <div class="text-xs text-slate-500">Check-in: ${fmtTime(r.check_in_at)} • ${escapeHtml(r.check_in_note || '')}</div>
+          </div>
+          <div class="font-mono font-semibold text-indigo-700">${fmtDurationMs(dur)}</div>
+        </div>`;
+      }).join('');
+    }
+
+    // ============================
+    //  PROJECTS & TASKS
+    // ============================
+    async function loadProjects() {
+      const list = document.getElementById('projectList');
+      list.innerHTML = 'Loading...';
+
+      // RLS will scope automatically
+      const { data, error } = await db.from('projects').select('*').order('created_at', { ascending: false });
+      if (error) { list.innerHTML = `<div class="text-rose-600">${escapeHtml(error.message)}</div>`; return; }
+
+      // fill project selects
+      const financeSelect = document.getElementById('financeProjectSelect');
+      const invSelect = document.getElementById('invProjectSelect');
+      financeSelect.innerHTML = '<option value="">-- Chọn dự án --</option>';
+      invSelect.innerHTML = '<option value="">-- Chọn dự án --</option>';
+
+      list.innerHTML = '';
+      if (!data || data.length === 0) {
+        list.innerHTML = '<div class="text-slate-500">Chưa có dự án.</div>';
+        return;
+      }
+
+      for (const p of data) {
+        financeSelect.innerHTML += `<option value="${p.id}">${escapeHtml(p.name)}</option>`;
+        invSelect.innerHTML += `<option value="${p.id}">${escapeHtml(p.name)}</option>`;
+
+        const div = document.createElement('div');
+        div.className = 'bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all cursor-pointer group';
+        div.innerHTML = `
+          <div class="flex justify-between items-start mb-2">
+            <div class="bg-indigo-50 text-indigo-600 p-2 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+              <i data-lucide="briefcase" class="w-5 h-5"></i>
+            </div>
+            <span class="${statusBadge(p.status)}">${escapeHtml(p.status || 'running')}</span>
+          </div>
+          <h3 class="font-bold text-gray-800 text-lg mb-1">${escapeHtml(p.name)}</h3>
+          <p class="text-xs text-gray-500 font-mono mb-4">${escapeHtml(p.code || 'N/A')}</p>
+          <div class="border-t pt-3 flex gap-2">
+            <button class="flex-1 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 py-2 rounded transition" data-action="tasks">Xem Tasks</button>
+            <button class="flex-1 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 py-2 rounded transition" data-action="detail">Chi tiết</button>
+          </div>
+        `;
+        div.querySelector('[data-action="tasks"]').onclick = (e) => { e.stopPropagation(); selectProject(p); };
+        div.querySelector('[data-action="detail"]').onclick = (e) => { e.stopPropagation(); showProjectDetail(p); };
+        div.onclick = () => selectProject(p);
+        list.appendChild(div);
+      }
+
+      lucide.createIcons();
+    }
+
+    function selectProject(p) {
+      activeProjectId = p.id;
+      activeProjectName = p.name;
+      document.getElementById('taskHeader').innerText = `Task: ${p.name}`;
+      document.getElementById('taskSection').classList.remove('hidden');
+      loadTasks();
+    }
+
+    async function addProject() {
+      if (!requirePerm('project.create', 'Chỉ Giám đốc/Quản lý được tạo dự án.')) return;
+      const name = prompt('Nhập tên dự án mới:');
+      if (!name) return;
+      showLoading(true);
+      const { error } = await db.from('projects').insert([{ name, code: 'NEW', status: 'running', created_by: currentUser.id }]);
+      showLoading(false);
+      if (error) return toast('Tạo dự án thất bại', error.message, 'danger');
+      toast('Thành công', 'Đã tạo dự án.', 'success');
+      await audit('project.create', 'projects', null, { name });
+      loadProjects();
+      loadDashboard();
+    }
+
+    async function loadTasks() {
+      const list = document.getElementById('taskList');
+      if (!activeProjectId) { list.innerHTML = ''; return; }
+      list.innerHTML = 'Loading...';
+
+      const { data, error } = await db.from('tasks').select('*').eq('project_id', activeProjectId).order('created_at', { ascending: false });
+      if (error) { list.innerHTML = `<div class="text-rose-600">${escapeHtml(error.message)}</div>`; return; }
+
+      list.innerHTML = '';
+      if (!data || data.length === 0) {
+        list.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">Chưa có công việc nào.</div>';
+        return;
+      }
+
+      for (const t of data) {
+        const div = document.createElement('div');
+        div.className = 'flex items-center justify-between p-3 bg-white border border-gray-100 rounded-lg hover:shadow-md transition-all';
+        const completed = String(t.status || '').toLowerCase() === 'completed';
+        div.innerHTML = `
+          <div class="flex items-center gap-3">
+            <button class="toggle text-left ${completed ? 'text-emerald-500' : 'text-gray-400'}" title="Toggle">
+              <i data-lucide="${completed ? 'check-circle-2' : 'circle'}" class="w-5 h-5"></i>
+            </button>
+            <div>
+              <div class="text-sm font-medium ${completed ? 'line-through text-gray-400' : 'text-gray-800'}">${escapeHtml(t.title)}</div>
+              <div class="text-xs text-slate-500">${escapeHtml(t.assignee_id === currentUser.id ? 'Bạn' : 'Assignee: ' + t.assignee_id)}</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="text-xs text-indigo-600 hover:underline" data-action="detail">Chi tiết</button>
+          </div>
+        `;
+
+        div.querySelector('[data-action="detail"]').onclick = () => showTaskDetail(t);
+        div.querySelector('.toggle').onclick = async () => {
+          if (!requirePerm('task.update_status', 'Bạn không có quyền cập nhật task.')) return;
+          // Employee can only toggle their own assigned tasks (enforced by RLS too)
+          const newStatus = completed ? 'pending' : 'completed';
+          const { error: upErr } = await db.from('tasks').update({ status: newStatus }).eq('id', t.id);
+          if (upErr) return toast('Lỗi', upErr.message, 'danger');
+          await audit('task.status', 'tasks', t.id, { from: t.status, to: newStatus });
+          loadTasks();
+        };
+
+        list.appendChild(div);
+      }
+
+      lucide.createIcons();
+    }
+
+    async function addTask() {
+      if (!activeProjectId) return;
+      if (!requirePerm('task.create', 'Chỉ Giám đốc/Quản lý được tạo task.')) return;
+
+      const title = document.getElementById('newTaskInput').value.trim();
+      if (!title) return;
+
+      showLoading(true);
+      const { error } = await db.from('tasks').insert([{ project_id: activeProjectId, title, created_by: currentUser.id, assignee_id: currentUser.id, status: 'pending' }]);
+      showLoading(false);
+      if (error) return toast('Tạo task thất bại', error.message, 'danger');
+
+      document.getElementById('newTaskInput').value = '';
+      await audit('task.create', 'tasks', null, { title, project_id: activeProjectId });
+      toast('Thành công', 'Đã tạo task.', 'success');
+      loadTasks();
+      loadDashboard();
+    }
+
+    async function showProjectDetail(p) {
+      const html = `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Tên dự án</div>
+            <div class="text-lg font-bold text-gray-900">${escapeHtml(p.name)}</div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Mã</div>
+            <div class="text-gray-700 font-mono">${escapeHtml(p.code || 'N/A')}</div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Trạng thái</div>
+            <div>${statusBadge(p.status)}</div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Ngày tạo</div>
+            <div class="text-gray-700">${escapeHtml(new Date(p.created_at).toLocaleString('vi-VN'))}</div>
+          </div>
+        </div>
+        ${p.description ? `<div class="mt-4"><div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Mô tả</div><div class="text-gray-700">${escapeHtml(p.description)}</div></div>` : ''}
+      `;
+      openModal('Chi tiết dự án', html);
+    }
+
+    async function showTaskDetail(t) {
+      const html = `
+        <div class="space-y-3">
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Task</div>
+            <div class="text-lg font-bold text-gray-900">${escapeHtml(t.title)}</div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Trạng thái</div>
+              <div>${statusBadge(t.status)}</div>
+            </div>
+            <div>
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Ngày tạo</div>
+              <div class="text-gray-700">${escapeHtml(new Date(t.created_at).toLocaleString('vi-VN'))}</div>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Assignee</div>
+            <div class="text-gray-700 font-mono">${escapeHtml(t.assignee_id)}</div>
+          </div>
+        </div>
+      `;
+      openModal('Chi tiết task', html);
+    }
+
+    // ============================
+    //  FINANCE
+    // ============================
+    async function loadFinance() {
+      const filter = document.getElementById('financeFilter').value;
+      const list = document.getElementById('financeList');
+      list.innerHTML = 'Loading...';
+
+      let q = db.from('payment_requests').select('*').order('created_at', { ascending: false });
+      if (filter !== 'all') q = q.eq('status', filter);
+
+      const { data, error } = await q;
+      if (error) { list.innerHTML = `<div class="p-4 text-rose-600">${escapeHtml(error.message)}</div>`; return; }
+
+      list.innerHTML = '';
+      if (!data || data.length === 0) {
+        list.innerHTML = '<div class="p-4 text-slate-500">Chưa có phiếu chi.</div>';
+        return;
+      }
+
+      for (const pay of data) {
+        const amount = Number(pay.amount || 0);
+        const div = document.createElement('div');
+        div.className = 'p-4 hover:bg-slate-50 transition-colors flex justify-between items-start gap-4';
+        div.innerHTML = `
+          <div class="min-w-0">
+            <div class="font-medium text-gray-900 truncate">${escapeHtml(pay.title)}</div>
+            <div class="text-xs text-gray-500 mt-1">${escapeHtml(new Date(pay.created_at).toLocaleString('vi-VN'))} • <span class="${statusBadge(pay.status)}">${escapeHtml(pay.status || 'pending')}</span></div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="font-mono font-bold text-gray-900">${amount.toLocaleString('vi-VN')} ₫</div>
+            <div class="mt-2 flex items-center justify-end gap-2">
+              <button class="text-xs text-indigo-600 font-medium" data-action="detail">Chi tiết</button>
+              <button class="text-xs text-emerald-700 font-semibold px-2 py-1 rounded border border-emerald-200 bg-emerald-50 hover:bg-emerald-100" data-action="approve">Duyệt</button>
+              <button class="text-xs text-rose-700 font-semibold px-2 py-1 rounded border border-rose-200 bg-rose-50 hover:bg-rose-100" data-action="reject">Từ chối</button>
+            </div>
+          </div>
+        `;
+
+        div.querySelector('[data-action="detail"]').onclick = () => showPaymentDetail(pay);
+
+        const btnApprove = div.querySelector('[data-action="approve"]');
+        const btnReject = div.querySelector('[data-action="reject"]');
+
+        // only show for roles
+        const canApprove = hasPerm('finance.approve');
+        btnApprove.classList.toggle('hidden', !canApprove);
+        btnReject.classList.toggle('hidden', !canApprove);
+
+        btnApprove.onclick = async () => {
+          if (!requirePerm('finance.approve')) return;
+          const { error: upErr } = await db.from('payment_requests').update({ status: 'approved', approved_by: currentUser.id, approved_at: new Date().toISOString() }).eq('id', pay.id);
+          if (upErr) return toast('Lỗi duyệt', upErr.message, 'danger');
+          await audit('finance.approve', 'payment_requests', pay.id, { status: 'approved' });
+          toast('Đã duyệt', pay.title, 'success');
+          loadFinance();
+        };
+
+        btnReject.onclick = async () => {
+          if (!requirePerm('finance.approve')) return;
+          const reason = prompt('Lý do từ chối (tuỳ chọn):') || null;
+          const { error: upErr } = await db.from('payment_requests').update({ status: 'rejected', reject_reason: reason, approved_by: currentUser.id, approved_at: new Date().toISOString() }).eq('id', pay.id);
+          if (upErr) return toast('Lỗi từ chối', upErr.message, 'danger');
+          await audit('finance.reject', 'payment_requests', pay.id, { status: 'rejected', reason });
+          toast('Đã từ chối', pay.title, 'warning');
+          loadFinance();
+        };
+
+        list.appendChild(div);
+      }
+
+      lucide.createIcons();
+    }
+
+    async function createPaymentRequest() {
+      if (!requirePerm('finance.create')) return;
+
+      const projectId = document.getElementById('financeProjectSelect').value;
+      const title = document.getElementById('financeTitle').value.trim();
+      const amount = Number(document.getElementById('financeAmount').value || 0);
+      if (!projectId || !title || amount <= 0) return toast('Thiếu thông tin', 'Vui lòng chọn dự án, nhập nội dung và số tiền > 0.', 'warning');
+
+      showLoading(true);
+      const { error } = await db.from('payment_requests').insert([{ project_id: projectId, requester_id: currentUser.id, title, amount, status: 'pending' }]);
+      showLoading(false);
+      if (error) return toast('Gửi phiếu thất bại', error.message, 'danger');
+
+      document.getElementById('financeTitle').value = '';
+      document.getElementById('financeAmount').value = '';
+      await audit('finance.create', 'payment_requests', null, { project_id: projectId, title, amount });
+      toast('Thành công', 'Đã gửi phiếu chi.', 'success');
+      loadFinance();
+      loadDashboard();
+    }
+
+    function showPaymentDetail(pay) {
+      const html = `
+        <div class="space-y-3">
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Nội dung</div>
+            <div class="text-lg font-bold text-gray-900">${escapeHtml(pay.title)}</div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Số tiền</div>
+              <div class="text-indigo-700 font-mono font-bold text-xl">${Number(pay.amount || 0).toLocaleString('vi-VN')} ₫</div>
+            </div>
+            <div>
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Trạng thái</div>
+              <div>${statusBadge(pay.status)}</div>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Người gửi</div>
+              <div class="text-gray-700 font-mono">${escapeHtml(pay.requester_id)}</div>
+            </div>
+            <div>
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Thời gian</div>
+              <div class="text-gray-700">${escapeHtml(new Date(pay.created_at).toLocaleString('vi-VN'))}</div>
+            </div>
+          </div>
+          ${pay.reject_reason ? `<div><div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Lý do từ chối</div><div class="text-gray-700">${escapeHtml(pay.reject_reason)}</div></div>` : ''}
+        </div>
+      `;
+      openModal('Chi tiết phiếu chi', html);
+    }
+
+    // ============================
+    //  INVENTORY
+    // ============================
+    async function loadInventory() {
+      const list = document.getElementById('inventoryList');
+      const select = document.getElementById('invItemSelect');
+      list.innerHTML = 'Loading...';
+      select.innerHTML = '<option value="">-- Chọn đồ --</option>';
+
+      const { data, error } = await db.from('inventory_items').select('*').order('name');
+      if (error) { list.innerHTML = `<div class="text-rose-600">${escapeHtml(error.message)}</div>`; return; }
+
+      list.innerHTML = '';
+      if (!data || data.length === 0) {
+        list.innerHTML = '<div class="text-slate-500">Chưa có vật phẩm kho.</div>';
+      } else {
+        for (const item of data) {
+          select.innerHTML += `<option value="${item.id}">${escapeHtml(item.name)} (Tồn: ${item.total_quantity || 0})</option>`;
+          const div = document.createElement('div');
+          div.className = 'bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer';
+          div.onclick = () => showInventoryDetail(item.id);
+          div.innerHTML = `
+            <div class="flex justify-between items-start mb-2">
+              <div class="bg-amber-50 text-amber-600 p-2 rounded-lg"><i data-lucide="package" class="w-5 h-5"></i></div>
+              <span class="text-xs text-gray-400 font-mono">${escapeHtml(item.code || 'N/A')}</span>
+            </div>
+            <h3 class="font-bold text-gray-800 truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h3>
+            <div class="mt-4 pt-4 border-t border-gray-100 flex justify-between items-end">
+              <span class="text-sm text-gray-500">Tồn kho</span>
+              <span class="text-2xl font-bold ${Number(item.total_quantity || 0) > 0 ? 'text-gray-900' : 'text-rose-500'}">${Number(item.total_quantity || 0)}</span>
+            </div>
+          `;
+          list.appendChild(div);
+        }
+      }
+
+      await loadInvHistory();
+      lucide.createIcons();
+    }
+
+    async function addNewItem() {
+      if (!requirePerm('inventory.manage', 'Chỉ Giám đốc/Quản lý được thêm vật phẩm kho.')) return;
+      const name = prompt('Tên món đồ:');
+      const qty = Number(prompt('Số lượng ban đầu:', '0') || '0');
+      if (!name) return;
+
+      showLoading(true);
+      const { error } = await db.from('inventory_items').insert([{ name, total_quantity: qty, code: 'ITEM-' + Math.floor(Math.random() * 100000) }]);
+      showLoading(false);
+      if (error) return toast('Thêm vật phẩm thất bại', error.message, 'danger');
+
+      await audit('inventory.item_create', 'inventory_items', null, { name, qty });
+      toast('Thành công', 'Đã thêm vật phẩm.', 'success');
+      loadInventory();
+    }
+
+    async function submitTransaction() {
+      if (!requirePerm('inventory.manage', 'Chỉ Giám đốc/Quản lý được thực hiện giao dịch kho.')) return;
+
+      const type = document.getElementById('invType').value;
+      const itemId = document.getElementById('invItemSelect').value;
+      const projectId = document.getElementById('invProjectSelect').value;
+      const qty = Number(document.getElementById('invQty').value || 0);
+      if (!itemId || !projectId || qty <= 0) return toast('Thiếu thông tin', 'Chọn vật phẩm, dự án và số lượng > 0.', 'warning');
+
+      showLoading(true);
+      const { data, error } = await db.rpc('apply_inventory_transaction', {
+        p_item_id: itemId,
+        p_project_id: projectId,
+        p_type: type,
+        p_qty: qty,
+      });
+      showLoading(false);
+      if (error) return toast('Giao dịch thất bại', error.message, 'danger');
+
+      await audit('inventory.tx', 'inventory_transactions', null, { type, item_id: itemId, project_id: projectId, qty, result: data });
+      toast('Thành công', 'Đã ghi giao dịch kho.', 'success');
+      loadInventory();
+    }
+
+    async function loadInvHistory() {
+      const div = document.getElementById('invHistoryList');
+      const { data, error } = await db.from('inventory_transactions').select('*').order('created_at', { ascending: false }).limit(8);
+      if (error) { div.innerHTML = `<div class="text-rose-600">${escapeHtml(error.message)}</div>`; return; }
+      div.innerHTML = '';
+      if (!data || data.length === 0) {
+        div.innerHTML = '<div class="text-slate-500">Chưa có giao dịch.</div>';
+        return;
+      }
+      for (const t of data) {
+        div.innerHTML += `
+          <div class="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-100">
+            <span class="${t.type === 'export' ? 'text-rose-600' : 'text-emerald-600'} font-medium text-xs uppercase">${escapeHtml(t.type)}</span>
+            <span class="font-mono font-bold">${Number(t.quantity || 0)}</span>
+          </div>
+        `;
+      }
+    }
+
+    async function showInventoryDetail(itemId) {
+      const { data: item, error: e1 } = await db.from('inventory_items').select('*').eq('id', itemId).single();
+      if (e1) return toast('Lỗi', e1.message, 'danger');
+
+      const { data: transactions } = await db.from('inventory_transactions').select('*').eq('item_id', itemId).order('created_at', { ascending: false }).limit(10);
+      const transHtml = (transactions && transactions.length)
+        ? `<div class="bg-slate-50 rounded-lg p-3 space-y-2 mt-2">${transactions.map(t => `
+            <div class="flex justify-between text-sm border-b border-slate-200 pb-1 last:border-0">
+              <span>${t.type === 'export' ? '📤 Xuất' : '📥 Nhập'} (${Number(t.quantity || 0)})</span>
+              <span class="text-gray-500 text-xs">${escapeHtml(new Date(t.created_at).toLocaleString('vi-VN'))}</span>
+            </div>
+          `).join('')}</div>`
+        : '<p class="text-sm text-gray-400">Chưa có giao dịch.</p>';
+
+      const html = `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Vật phẩm</div>
+            <div class="text-lg font-bold text-gray-900">${escapeHtml(item.name)}</div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Mã</div>
+            <div class="text-gray-700 font-mono">${escapeHtml(item.code || 'N/A')}</div>
+          </div>
+        </div>
+        <div class="mt-4">
+          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Tồn kho hiện tại</div>
+          <div class="text-2xl font-bold text-gray-800">${Number(item.total_quantity || 0)}</div>
+        </div>
+        <div class="mt-4">
+          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Lịch sử gần đây</div>
+          ${transHtml}
+        </div>
+      `;
+      openModal('Chi tiết kho', html);
+    }
+
+    // ============================
+    //  HR (Attendance + Leave)
+    // ============================
+    setInterval(() => {
+      document.getElementById('clock').innerText = new Date().toLocaleTimeString('vi-VN');
+      // update dashboard open durations if currently on dashboard
+      if (!document.getElementById('tab-dashboard').classList.contains('hidden')) {
+        // light update
+      }
+    }, 1000);
+
+    function todayLocalDate() {
+      // Asia/Ho_Chi_Minh local date (client)
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    async function loadHR() {
+      // defaults for filter
+      const fromEl = document.getElementById('attFrom');
+      const toEl = document.getElementById('attTo');
+      if (!fromEl.value) {
+        const d = new Date();
+        d.setDate(d.getDate() - 14);
+        fromEl.value = d.toISOString().slice(0,10);
+      }
+      if (!toEl.value) toEl.value = new Date().toISOString().slice(0,10);
+
+      // open attendance (RLS will scope)
+      const { data: open, error } = await db.from('attendance').select('*').eq('user_id', currentUser.id).is('check_out_at', null).order('check_in_at', { ascending: false }).limit(1);
+      if (error) toast('Lỗi HR', error.message, 'danger');
+      openAttendance = (open && open[0]) ? open[0] : null;
+      renderHRState();
+
+      await loadAttendanceHistory();
+      await loadLeaveHistory();
+
+      // user filter options for director/manager
+      if (profile.role === 'director' || profile.role === 'manager') {
+        await loadUserFilterOptions();
+      }
+
+      // checkin preview
+      wireImagePreview('checkinPhoto', 'checkinPreviewWrap', 'checkinPreview');
+
+      lucide.createIcons();
+    }
+
+    function renderHRState() {
+      const checkinPanel = document.getElementById('checkinPanel');
+      const checkoutPanel = document.getElementById('checkoutPanel');
+
+      if (!openAttendance) {
+        checkinPanel.classList.remove('hidden');
+        checkoutPanel.classList.add('hidden');
+        stopTimer();
+        document.getElementById('workTimer').innerText = '00:00:00';
+        return;
+      }
+
+      checkinPanel.classList.add('hidden');
+      checkoutPanel.classList.remove('hidden');
+      document.getElementById('inTimeDisplay').innerText = fmtTime(openAttendance.check_in_at);
+      startTimer(openAttendance.check_in_at);
+    }
+
+    function startTimer(checkInAt) {
+      stopTimer();
+      const start = new Date(checkInAt).getTime();
+      timerInterval = setInterval(() => {
+        const ms = Date.now() - start;
+        document.getElementById('workTimer').innerText = fmtDurationMs(ms);
+      }, 1000);
+    }
+
+    function stopTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    function wireImagePreview(inputId, wrapId, imgId) {
+      const input = document.getElementById(inputId);
+      const wrap = document.getElementById(wrapId);
+      const img = document.getElementById(imgId);
+      if (!input || !wrap || !img) return;
+
+      input.onchange = () => {
+        const f = input.files && input.files[0];
+        if (!f) { wrap.classList.add('hidden'); return; }
+        const url = URL.createObjectURL(f);
+        img.src = url;
+        wrap.classList.remove('hidden');
+      };
+    }
+
+    async function getGeolocation() {
+      return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) return reject(new Error('Thiết bị không hỗ trợ GPS.'));
+        navigator.geolocation.getCurrentPosition(
+          pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy }),
+          err => reject(err),
+          { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        );
+      });
+    }
+
+    async function handleGetGeo() {
+      try {
+        toast('Đang lấy vị trí', 'Vui lòng chờ...', 'info');
+        geo = await getGeolocation();
+        document.getElementById('geoStatus').innerText = `Vị trí: ${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)} (±${Math.round(geo.acc)}m)`;
+        await audit('hr.geo', 'attendance', null, geo);
+      } catch (e) {
+        toast('Không lấy được vị trí', e.message || String(e), 'warning');
+      }
+    }
+
+    async function uploadAttendancePhoto(file, kind) {
+      // kind: 'checkin'|'checkout'
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const safeExt = ['jpg','jpeg','png','webp'].includes(ext) ? ext : 'jpg';
+      const path = `${currentUser.id}/${todayLocalDate()}/${kind}-${Date.now()}.${safeExt}`;
+      const { error } = await db.storage.from('attendance-photos').upload(path, file, { upsert: false, contentType: file.type || 'image/jpeg' });
+      if (error) throw error;
+      return path;
+    }
+
+    async function getSignedUrl(path) {
+      // for private bucket
+      const { data, error } = await db.storage.from('attendance-photos').createSignedUrl(path, 60 * 10);
+      if (error) return null;
+      return data?.signedUrl || null;
+    }
+
+    async function handleCheckIn() {
+      if (!requirePerm('hr.checkin')) return;
+      if (openAttendance) return toast('Đang check-in', 'Bạn phải check-out trước khi check-in mới.', 'warning');
+
+      const file = document.getElementById('checkinPhoto').files?.[0];
+      if (!file) return toast('Thiếu ảnh', 'Vui lòng chụp/chọn ảnh check-in.', 'warning');
+
+      showLoading(true);
+      try {
+        const photoPath = await uploadAttendancePhoto(file, 'checkin');
+        const note = document.getElementById('checkinNote').value.trim() || null;
+
+        const payload = {
+          user_id: currentUser.id,
+          check_in_at: new Date().toISOString(),
+          check_in_photo_path: photoPath,
+          check_in_note: note,
+          check_in_geo: geo,
+        };
+
+        const { data, error } = await db.from('attendance').insert([payload]).select('*').single();
+        if (error) throw error;
+
+        openAttendance = data;
+        await audit('hr.checkin', 'attendance', data.id, { note, geo });
+        toast('Check-in thành công', 'Đã bắt đầu đếm giờ.', 'success');
+
+        // reset inputs
+        document.getElementById('checkinPhoto').value = '';
+        document.getElementById('checkinNote').value = '';
+        document.getElementById('checkinPreviewWrap').classList.add('hidden');
+
+        renderHRState();
+        loadAttendanceHistory();
+        loadDashboard();
+      } catch (e) {
+        toast('Check-in thất bại', e.message || String(e), 'danger');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    async function handleCheckOut() {
+      if (!requirePerm('hr.checkin')) return;
+      if (!openAttendance) return toast('Chưa check-in', 'Bạn cần check-in trước.', 'warning');
+
+      showLoading(true);
+      try {
+        const file = document.getElementById('checkoutPhoto').files?.[0] || null;
+        const note = document.getElementById('checkoutNote').value.trim() || null;
+
+        let checkoutPhotoPath = null;
+        if (file) checkoutPhotoPath = await uploadAttendancePhoto(file, 'checkout');
+
+        const upd = {
+          check_out_at: new Date().toISOString(),
+          check_out_photo_path: checkoutPhotoPath,
+          check_out_note: note,
+          check_out_geo: geo,
+        };
+
+        const { error } = await db.from('attendance').update(upd).eq('id', openAttendance.id);
+        if (error) throw error;
+
+        await audit('hr.checkout', 'attendance', openAttendance.id, { note, geo, has_photo: !!file });
+        toast('Check-out thành công', 'Đã kết thúc ca làm.', 'success');
+
+        openAttendance = null;
+        document.getElementById('checkoutPhoto').value = '';
+        document.getElementById('checkoutNote').value = '';
+
+        renderHRState();
+        loadAttendanceHistory();
+        loadDashboard();
+      } catch (e) {
+        toast('Check-out thất bại', e.message || String(e), 'danger');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    async function loadUserFilterOptions() {
+      const sel = document.getElementById('attUserFilter');
+      const { data, error } = await db.from('profiles').select('id,email,full_name,role,is_active').order('email');
+      if (error) return;
+      sel.innerHTML = '<option value="">(Tất cả trong scope)</option>';
+      for (const u of data) {
+        sel.innerHTML += `<option value="${u.id}">${escapeHtml(u.email)} • ${escapeHtml(u.full_name || '')}</option>`;
+      }
+    }
+
+    async function loadAttendanceHistory() {
+      const tbody = document.getElementById('attendanceTable');
+      tbody.innerHTML = '<tr><td class="py-3 text-slate-500" colspan="7">Loading...</td></tr>';
+
+      const from = document.getElementById('attFrom').value || null;
+      const to = document.getElementById('attTo').value || null;
+      const userFilter = (profile.role === 'director' || profile.role === 'manager') ? (document.getElementById('attUserFilter').value || null) : currentUser.id;
+
+      let q = db.from('attendance_view').select('*').order('check_in_at', { ascending: false }).limit(200);
+      if (from) q = q.gte('check_in_date', from);
+      if (to) q = q.lte('check_in_date', to);
+      if (userFilter) q = q.eq('user_id', userFilter);
+
+      const { data, error } = await q;
+      if (error) {
+        tbody.innerHTML = `<tr><td class="py-3 text-rose-600" colspan="7">${escapeHtml(error.message)}</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = '';
+      if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td class="py-3 text-slate-500" colspan="7">Không có dữ liệu.</td></tr>';
+        return;
+      }
+
+      for (const r of data) {
+        const inAt = r.check_in_at ? new Date(r.check_in_at).getTime() : null;
+        const outAt = r.check_out_at ? new Date(r.check_out_at).getTime() : null;
+        const dur = inAt ? (outAt ? (outAt - inAt) : (Date.now() - inAt)) : 0;
+
+        // photo preview (signed)
+        let photoBtn = '<span class="text-xs text-slate-400">-</span>';
+        if (r.check_in_photo_path) {
+          photoBtn = `<button class="text-xs text-indigo-600 hover:underline" data-photo="${escapeHtml(r.check_in_photo_path)}">Xem</button>`;
+        }
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="py-3">${escapeHtml(r.check_in_date || '')}</td>
+          <td class="py-3">${escapeHtml(r.user_email || r.user_id)}</td>
+          <td class="py-3 font-mono">${escapeHtml(fmtTime(r.check_in_at))}</td>
+          <td class="py-3 font-mono">${escapeHtml(fmtTime(r.check_out_at))}</td>
+          <td class="py-3 font-mono font-semibold">${escapeHtml(fmtDurationMs(dur))}</td>
+          <td class="py-3">${photoBtn}</td>
+          <td class="py-3"><button class="text-xs text-slate-700 hover:underline" data-detail="${r.id}">Chi tiết</button></td>
+        `;
+
+        const btnPhoto = tr.querySelector('[data-photo]');
+        if (btnPhoto) {
+          btnPhoto.onclick = async () => {
+            const path = btnPhoto.getAttribute('data-photo');
+            const url = await getSignedUrl(path);
+            if (!url) return toast('Không lấy được ảnh', 'Kiểm tra policy bucket attendance-photos.', 'warning');
+            openModal('Ảnh Check-in', `<img src="${url}" class="w-full rounded-xl border" alt="photo" />`);
+          };
+        }
+
+        tr.querySelector('[data-detail]').onclick = () => showAttendanceDetail(r);
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function showAttendanceDetail(r) {
+      const inUrl = r.check_in_photo_path ? await getSignedUrl(r.check_in_photo_path) : null;
+      const outUrl = r.check_out_photo_path ? await getSignedUrl(r.check_out_photo_path) : null;
+
+      const html = `
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Tài khoản</div>
+              <div class="text-lg font-bold text-gray-900">${escapeHtml(r.user_email || r.user_id)}</div>
+            </div>
+            <div>${badgeRole(r.user_role || '')}</div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <div class="font-semibold">Check-in</div>
+              <div class="text-sm text-slate-600 mt-1">${escapeHtml(new Date(r.check_in_at).toLocaleString('vi-VN'))}</div>
+              <div class="text-xs text-slate-500 mt-1">${escapeHtml(r.check_in_note || '')}</div>
+              ${inUrl ? `<img src="${inUrl}" class="mt-3 w-full rounded-xl border" />` : ''}
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <div class="font-semibold">Check-out</div>
+              <div class="text-sm text-slate-600 mt-1">${r.check_out_at ? escapeHtml(new Date(r.check_out_at).toLocaleString('vi-VN')) : '<span class="text-rose-600">Chưa check-out</span>'}</div>
+              <div class="text-xs text-slate-500 mt-1">${escapeHtml(r.check_out_note || '')}</div>
+              ${outUrl ? `<img src="${outUrl}" class="mt-3 w-full rounded-xl border" />` : ''}
+            </div>
+          </div>
+          <div class="text-xs text-slate-500">ID: <span class="font-mono">${escapeHtml(r.id)}</span></div>
+        </div>
+      `;
+      openModal('Chi tiết chấm công', html);
+    }
+
+    async function submitLeave() {
+      const date = document.getElementById('leaveStart').value;
+      const reason = document.getElementById('leaveReason').value.trim() || null;
+      if (!date) return toast('Thiếu ngày', 'Vui lòng chọn ngày nghỉ.', 'warning');
+
+      showLoading(true);
+      const { error } = await db.from('leave_requests').insert([{ user_id: currentUser.id, start_date: date, reason, status: 'pending' }]);
+      showLoading(false);
+      if (error) return toast('Gửi đơn thất bại', error.message, 'danger');
+
+      await audit('leave.create', 'leave_requests', null, { date, reason });
+      toast('Thành công', 'Đã gửi đơn nghỉ.', 'success');
+      document.getElementById('leaveReason').value = '';
+      loadLeaveHistory();
+    }
+
+    async function loadLeaveHistory() {
+      const list = document.getElementById('hrLeaveHistoryList');
+      list.innerHTML = 'Loading...';
+      const { data, error } = await db.from('leave_requests').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(20);
+      if (error) { list.innerHTML = `<div class="text-rose-600">${escapeHtml(error.message)}</div>`; return; }
+      list.innerHTML = '';
+      if (!data || data.length === 0) {
+        list.innerHTML = '<div class="text-slate-500 text-sm">Chưa có đơn.</div>';
+        return;
+      }
+      for (const l of data) {
+        const div = document.createElement('div');
+        div.className = 'p-3 bg-white border border-gray-100 rounded-lg flex justify-between items-center';
+        div.innerHTML = `
+          <div>
+            <div class="font-medium text-gray-800 text-sm">${escapeHtml(l.start_date)}</div>
+            <div class="text-xs text-gray-500 max-w-[260px] truncate">${escapeHtml(l.reason || '')}</div>
+          </div>
+          <div class="text-right">
+            <div>${statusBadge(l.status || 'pending')}</div>
+          </div>
+        `;
+        list.appendChild(div);
+      }
+      lucide.createIcons();
+    }
+
+    // ============================
+    //  ADMIN (Users)
+    // ============================
+    async function loadUsers() {
+      const tbody = document.getElementById('usersTable');
+      tbody.innerHTML = '<tr><td class="py-3 text-slate-500" colspan="5">Loading...</td></tr>';
+
+      // RLS will scope for manager (only their team) if you implement policies that way
+      const { data, error } = await db.from('profiles').select('id,email,full_name,role,is_active,manager_id,created_at').order('email');
+      if (error) {
+        tbody.innerHTML = `<tr><td class="py-3 text-rose-600" colspan="5">${escapeHtml(error.message)}</td></tr>`;
+        return;
+      }
+
+      // fill managers select
+      const mgrSel = document.getElementById('newUserManager');
+      mgrSel.innerHTML = '<option value="">(Chọn quản lý)</option>';
+      for (const u of data) {
+        if (u.role === 'manager' || u.role === 'director') {
+          mgrSel.innerHTML += `<option value="${u.id}">${escapeHtml(u.email)} • ${escapeHtml(ROLE_LABEL[u.role])}</option>`;
+        }
+      }
+
+      // search filter
+      const q = document.getElementById('userSearch').value.trim().toLowerCase();
+      const rows = (q ? data.filter(u => (u.email || '').toLowerCase().includes(q) || (u.full_name || '').toLowerCase().includes(q)) : data);
+
+      tbody.innerHTML = '';
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = '<tr><td class="py-3 text-slate-500" colspan="5">Không có người dùng.</td></tr>';
+        return;
+      }
+
+      for (const u of rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="py-3">${escapeHtml(u.email)}</td>
+          <td class="py-3">${escapeHtml(u.full_name || '')}</td>
+          <td class="py-3">${badgeRole(u.role)}</td>
+          <td class="py-3">${u.is_active ? '<span class="text-emerald-700 font-semibold">Active</span>' : '<span class="text-rose-700 font-semibold">Disabled</span>'}</td>
+          <td class="py-3">
+            <div class="flex items-center gap-2">
+              <button class="text-xs text-indigo-600 hover:underline" data-action="detail">Xem</button>
+              <button class="text-xs text-slate-700 hover:underline" data-action="edit">Sửa</button>
+              <button class="text-xs text-rose-700 hover:underline" data-action="toggle">${u.is_active ? 'Vô hiệu' : 'Kích hoạt'}</button>
+            </div>
+          </td>
+        `;
+
+        tr.querySelector('[data-action="detail"]').onclick = () => showUserDetail(u);
+        tr.querySelector('[data-action="edit"]').onclick = () => showUserEdit(u);
+        tr.querySelector('[data-action="toggle"]').onclick = () => toggleUser(u);
+
+        // Non-director can't edit director accounts (client UX; DB policy must enforce too)
+        if (profile.role !== 'director' && u.role === 'director') {
+          tr.querySelector('[data-action="edit"]').classList.add('opacity-40', 'pointer-events-none');
+          tr.querySelector('[data-action="toggle"]').classList.add('opacity-40', 'pointer-events-none');
+        }
+
+        tbody.appendChild(tr);
+      }
+
+      lucide.createIcons();
+    }
+
+    function showUserDetail(u) {
+      const html = `
+        <div class="space-y-3">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</div>
+              <div class="text-lg font-bold text-gray-900">${escapeHtml(u.email)}</div>
+            </div>
+            <div>${badgeRole(u.role)}</div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Họ tên</div>
+              <div class="text-gray-700">${escapeHtml(u.full_name || '')}</div>
+            </div>
+            <div>
+              <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Trạng thái</div>
+              <div class="text-gray-700">${u.is_active ? 'Active' : 'Disabled'}</div>
+            </div>
+          </div>
+          <div class="text-xs text-slate-500">User ID: <span class="font-mono">${escapeHtml(u.id)}</span></div>
+        </div>
+      `;
+      openModal('Chi tiết tài khoản', html);
+    }
+
+    function showUserEdit(u) {
+      const canManage = profile.role === 'director' || (profile.role === 'manager' && u.role !== 'director');
+      if (!canManage) return toast('Không đủ quyền', 'Bạn không thể sửa tài khoản này.', 'warning');
+
+      const html = `
+        <div class="space-y-4">
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Email</div>
+            <div class="font-mono">${escapeHtml(u.email)}</div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Họ tên</label>
+              <input id="editFullName" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value="${escapeHtml(u.full_name || '')}" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Role</label>
+              <select id="editRole" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                <option value="employee" ${u.role === 'employee' ? 'selected' : ''}>Nhân Viên</option>
+                <option value="manager" ${u.role === 'manager' ? 'selected' : ''}>Quản Lý</option>
+                <option value="director" ${u.role === 'director' ? 'selected' : ''}>Giám Đốc</option>
+              </select>
+              <p class="text-xs text-slate-500 mt-1">* Chỉ Giám đốc được cấp quyền Giám đốc.</p>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Manager ID (tuỳ chọn)</label>
+            <input id="editManagerId" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" value="${escapeHtml(u.manager_id || '')}" placeholder="uuid" />
+          </div>
+
+          <div class="flex justify-end gap-2">
+            <button class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-sm" onclick="closeModal()">Hủy</button>
+            <button class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold" id="btnSaveUser">Lưu</button>
+          </div>
+        </div>
+      `;
+      openModal('Sửa tài khoản', html);
+
+      document.getElementById('btnSaveUser').onclick = async () => {
+        const full_name = document.getElementById('editFullName').value.trim() || null;
+        const role = document.getElementById('editRole').value;
+        const manager_id = document.getElementById('editManagerId').value.trim() || null;
+
+        // UX guard
+        if (role === 'director' && profile.role !== 'director') {
+          return toast('Không đủ quyền', 'Chỉ Giám đốc được cấp role Giám đốc.', 'warning');
+        }
+
+        showLoading(true);
+        const { error } = await db.from('profiles').update({ full_name, role, manager_id }).eq('id', u.id);
+        showLoading(false);
+        if (error) return toast('Lưu thất bại', error.message, 'danger');
+
+        await audit('user.update', 'profiles', u.id, { full_name, role, manager_id });
+        toast('Thành công', 'Đã cập nhật tài khoản.', 'success');
+        closeModal();
+        loadUsers();
+      };
+    }
+
+    async function toggleUser(u) {
+      const canManage = profile.role === 'director' || (profile.role === 'manager' && u.role !== 'director');
+      if (!canManage) return toast('Không đủ quyền', 'Bạn không thể vô hiệu/kích hoạt tài khoản này.', 'warning');
+
+      const next = !u.is_active;
+      showLoading(true);
+      const { error } = await db.from('profiles').update({ is_active: next }).eq('id', u.id);
+      showLoading(false);
+      if (error) return toast('Thao tác thất bại', error.message, 'danger');
+
+      await audit('user.toggle', 'profiles', u.id, { is_active: next });
+      toast('Thành công', next ? 'Đã kích hoạt.' : 'Đã vô hiệu.', next ? 'success' : 'warning');
+      loadUsers();
+    }
+
+    async function createUser() {
+      if (!requirePerm('user.manage', 'Chỉ Giám đốc được tạo tài khoản mới.')) return;
+      if (!EDGE_CREATE_USER_URL || EDGE_CREATE_USER_URL.includes('REPLACE')) {
+        return toast('Thiếu Edge Function', 'Bạn cần triển khai Edge Function admin-create-user để tạo account an toàn.', 'warning');
+      }
+
+      const email = document.getElementById('newUserEmail').value.trim();
+      const tempPassword = document.getElementById('newUserTempPass').value.trim();
+      const full_name = document.getElementById('newUserFullName').value.trim();
+      const role = document.getElementById('newUserRole').value;
+      const manager_id = document.getElementById('newUserManager').value || null;
+
+      if (!email || !tempPassword) return toast('Thiếu thông tin', 'Email và mật khẩu tạm là bắt buộc.', 'warning');
+
+      showLoading(true);
+      try {
+        const token = session?.access_token;
+        const res = await fetch(EDGE_CREATE_USER_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ email, password: tempPassword, full_name, role, manager_id }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+
+        await audit('user.create', 'auth.users', json.user_id || null, { email, role, manager_id });
+        toast('Tạo tài khoản thành công', email, 'success');
+
+        document.getElementById('newUserEmail').value = '';
+        document.getElementById('newUserTempPass').value = '';
+        document.getElementById('newUserFullName').value = '';
+        document.getElementById('newUserRole').value = 'employee';
+        document.getElementById('newUserManager').value = '';
+
+        loadUsers();
+      } catch (e) {
+        toast('Tạo tài khoản thất bại', e.message || String(e), 'danger');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // ============================
+    //  AUDIT
+    // ============================
+    async function audit(action, entity, entity_id, meta) {
+      // Safe: if audit_log table exists + RLS allows insert
+      try {
+        await db.from('audit_log').insert([{ action, entity, entity_id, meta, actor_id: currentUser.id }]);
+      } catch (_) {}
+    }
+
+    async function loadAudit() {
+      if (!requirePerm('audit.view', 'Chỉ Giám đốc/Quản lý được xem audit.')) return;
+      const tbody = document.getElementById('auditTable');
+      tbody.innerHTML = '<tr><td class="py-3 text-slate-500" colspan="5">Loading...</td></tr>';
+
+      const { data, error } = await db.from('audit_log_view').select('*').order('created_at', { ascending: false }).limit(200);
+      if (error) {
+        tbody.innerHTML = `<tr><td class="py-3 text-rose-600" colspan="5">${escapeHtml(error.message)}</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = '';
+      if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td class="py-3 text-slate-500" colspan="5">Chưa có log.</td></tr>';
+        return;
+      }
+
+      for (const r of data) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="py-3">${escapeHtml(new Date(r.created_at).toLocaleString('vi-VN'))}</td>
+          <td class="py-3">${escapeHtml(r.actor_email || r.actor_id)}</td>
+          <td class="py-3 font-semibold">${escapeHtml(r.action)}</td>
+          <td class="py-3">${escapeHtml(r.entity)}${r.entity_id ? ` • <span class="font-mono text-xs">${escapeHtml(r.entity_id)}</span>` : ''}</td>
+          <td class="py-3"><button class="text-xs text-indigo-600 hover:underline" data-meta>Meta</button></td>
+        `;
+        tr.querySelector('[data-meta]').onclick = () => openModal('Audit meta', `<pre class="text-xs bg-slate-50 border rounded-xl p-4 overflow-auto">${escapeHtml(JSON.stringify(r.meta || {}, null, 2))}</pre>`);
+        tbody.appendChild(tr);
+      }
+    }
+
+    // ============================
+    //  WIRING
+    // ============================
+    function wireEvents() {
+      // login
+      document.getElementById('btnLogin').onclick = () => signIn(
+        document.getElementById('email').value.trim(),
+        document.getElementById('password').value
+      );
+
+      document.getElementById('btnLogout').onclick = signOut;
+      document.getElementById('btnLogoutMobile').onclick = signOut;
+
+      // tabs
+      document.querySelectorAll('[data-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tab = btn.getAttribute('data-tab');
+          if (!tab) return;
+          // guard admin/audit
+          if ((tab === 'admin' || tab === 'audit') && !(profile?.role === 'director' || profile?.role === 'manager')) {
+            toast('Không đủ quyền', 'Bạn không được truy cập mục này.', 'warning');
+            return;
+          }
+          switchTab(tab);
+        });
+      });
+
+      document.getElementById('btnRefresh').onclick = refreshAll;
+
+      // projects
+      document.getElementById('btnAddProject').onclick = addProject;
+      document.getElementById('btnAddTask').onclick = addTask;
+
+      // finance
+      document.getElementById('btnCreatePayment').onclick = createPaymentRequest;
+      document.getElementById('financeFilter').onchange = loadFinance;
+
+      // inventory
+      document.getElementById('btnAddNewItem').onclick = addNewItem;
+      document.getElementById('btnSubmitTransaction').onclick = submitTransaction;
+
+      // hr
+      document.getElementById('btnGeo').onclick = handleGetGeo;
+      document.getElementById('btnCheckIn').onclick = handleCheckIn;
+      document.getElementById('btnCheckOut').onclick = handleCheckOut;
+      document.getElementById('btnLoadAttendance').onclick = loadAttendanceHistory;
+      document.getElementById('attUserFilter').onchange = loadAttendanceHistory;
+      document.getElementById('btnSubmitLeave').onclick = submitLeave;
+
+      // admin
+      document.getElementById('btnReloadUsers').onclick = loadUsers;
+      document.getElementById('userSearch').oninput = () => loadUsers();
+      document.getElementById('btnCreateUser').onclick = createUser;
+
+      // audit
+      document.getElementById('btnLoadAudit').onclick = loadAudit;
+
+      // modal
+      document.getElementById('btnCloseModal').onclick = closeModal;
+      document.getElementById('modalBackdrop').onclick = closeModal;
+    }
+
+    // ============================
+    //  START
+    // ============================
+    (function main() {
+      wireEvents();
+      initAuth();
+      lucide.createIcons();
+    })();
+
+  </script>
+
+  <!--
+    ============================================================
+    IMPORTANT (Account creation):
+    - Creating Supabase Auth users securely requires service_role key.
+    - Do NOT place service_role in this HTML.
+    - Use Edge Function admin-create-user with JWT verification.
+    - SQL at the bottom of assistant message provides RLS policies.
+    ============================================================
+  -->
+</body>
+</html>
