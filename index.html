@@ -606,6 +606,8 @@
 
       // projects/tasks
       'project.create': ['director', 'manager'],
+      'project.update': ['director', 'manager'],
+      'project.delete': ['director', 'manager'],
       'project.view': ['director', 'manager', 'employee'],
       'task.create': ['director', 'manager'],
       'task.update_status': ['director', 'manager', 'employee'],
@@ -640,9 +642,32 @@
     // ============================
     //  UI HELPERS
     // ============================
-    function showLoading(on) {
-      document.getElementById('loadingOverlay').classList.toggle('hidden', !on);
-    }
+    // reference-counted loading overlay (avoid stuck spinner)
+let __loadingCount = 0;
+function showLoading(on) {
+  const overlay = document.getElementById('loadingOverlay');
+  if (!overlay) return;
+  if (on) __loadingCount += 1;
+  else __loadingCount = Math.max(0, __loadingCount - 1);
+  overlay.classList.toggle('hidden', __loadingCount === 0);
+}
+function hideLoadingAll() {
+  __loadingCount = 0;
+  const overlay = document.getElementById('loadingOverlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+// Fail-safe: never leave loading overlay stuck on JS errors
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('Unhandled rejection:', e.reason);
+  hideLoadingAll();
+  toast('Lỗi hệ thống', (e.reason && (e.reason.message || String(e.reason))) || 'Unhandled promise rejection', 'danger');
+});
+window.addEventListener('error', (e) => {
+  console.error('Runtime error:', e.error || e.message);
+  hideLoadingAll();
+  toast('Lỗi hệ thống', e.message || 'Runtime error', 'danger');
+});
 
     function toast(title, message, type = 'info') {
       const host = document.getElementById('toastHost');
@@ -937,54 +962,78 @@
     //  PROJECTS & TASKS
     // ============================
     async function loadProjects() {
-      const list = document.getElementById('projectList');
-      list.innerHTML = 'Loading...';
+  const list = document.getElementById('projectList');
+  list.innerHTML = 'Loading...';
 
-      // RLS will scope automatically
-      const { data, error } = await db.from('projects').select('*').order('created_at', { ascending: false });
-      if (error) { list.innerHTML = `<div class="text-rose-600">${escapeHtml(error.message)}</div>`; return; }
+  // RLS will scope automatically
+  const { data, error } = await db.from('projects').select('*').order('created_at', { ascending: false });
+  if (error) { list.innerHTML = `<div class="text-rose-600">${escapeHtml(error.message)}</div>`; return; }
 
-      // fill project selects
-      const financeSelect = document.getElementById('financeProjectSelect');
-      const invSelect = document.getElementById('invProjectSelect');
-      financeSelect.innerHTML = '<option value="">-- Chọn dự án --</option>';
-      invSelect.innerHTML = '<option value="">-- Chọn dự án --</option>';
+  // hide archived projects by default (treat as "đã xoá/đã ẩn")
+  const rows = (data || []).filter(p => String(p.status || '').toLowerCase() !== 'archived');
 
-      list.innerHTML = '';
-      if (!data || data.length === 0) {
-        list.innerHTML = '<div class="text-slate-500">Chưa có dự án.</div>';
-        return;
-      }
+  // fill project selects
+  const financeSelect = document.getElementById('financeProjectSelect');
+  const invSelect = document.getElementById('invProjectSelect');
+  financeSelect.innerHTML = '<option value="">-- Chọn dự án --</option>';
+  invSelect.innerHTML = '<option value="">-- Chọn dự án --</option>';
 
-      for (const p of data) {
-        financeSelect.innerHTML += `<option value="${p.id}">${escapeHtml(p.name)}</option>`;
-        invSelect.innerHTML += `<option value="${p.id}">${escapeHtml(p.name)}</option>`;
+  list.innerHTML = '';
+  if (!rows || rows.length === 0) {
+    list.innerHTML = '<div class="text-slate-500">Chưa có dự án.</div>';
+    return;
+  }
 
-        const div = document.createElement('div');
-        div.className = 'bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all cursor-pointer group';
-        div.innerHTML = `
-          <div class="flex justify-between items-start mb-2">
-            <div class="bg-indigo-50 text-indigo-600 p-2 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-              <i data-lucide="briefcase" class="w-5 h-5"></i>
-            </div>
-            <span class="${statusBadge(p.status)}">${escapeHtml(p.status || 'active')}</span>
-          </div>
-          <h3 class="font-bold text-gray-800 text-lg mb-1">${escapeHtml(p.name)}</h3>
-          <p class="text-xs text-gray-500 font-mono mb-4">${escapeHtml(p.code || 'N/A')}</p>
-          <div class="border-t pt-3 flex gap-2">
-            <button class="flex-1 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 py-2 rounded transition" data-action="tasks">Xem Tasks</button>
-            <button class="flex-1 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 py-2 rounded transition" data-action="detail">Chi tiết</button>
-          </div>
-        `;
-        div.querySelector('[data-action="tasks"]').onclick = (e) => { e.stopPropagation(); selectProject(p); };
-        div.querySelector('[data-action="detail"]').onclick = (e) => { e.stopPropagation(); showProjectDetail(p); };
-        div.onclick = () => selectProject(p);
-        list.appendChild(div);
-      }
+  const canEdit = hasPerm('project.update');
+  const canDel = hasPerm('project.delete');
 
-      lucide.createIcons();
-    }
+  for (const p of rows) {
+    financeSelect.innerHTML += `<option value="${p.id}">${escapeHtml(p.name)}</option>`;
+    invSelect.innerHTML += `<option value="${p.id}">${escapeHtml(p.name)}</option>`;
 
+    const div = document.createElement('div');
+    div.className = 'bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all cursor-pointer group';
+    div.innerHTML = `
+      <div class="flex justify-between items-start mb-2">
+        <div class="bg-indigo-50 text-indigo-600 p-2 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+          <i data-lucide="briefcase" class="w-5 h-5"></i>
+        </div>
+        <span class="${statusBadge(p.status)}">${escapeHtml(p.status || 'active')}</span>
+      </div>
+      <h3 class="font-bold text-gray-800 text-lg mb-1">${escapeHtml(p.name)}</h3>
+      <p class="text-xs text-gray-500 font-mono mb-4">${escapeHtml(p.code || 'N/A')}</p>
+
+      <div class="border-t pt-3 grid grid-cols-2 gap-2">
+        <button class="text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 py-2 rounded transition" data-action="tasks">
+          Xem Tasks
+        </button>
+        <button class="text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 py-2 rounded transition" data-action="detail">
+          Chi tiết
+        </button>
+        <button class="text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 py-2 rounded transition ${canEdit ? '' : 'hidden'}" data-action="edit">
+          Sửa
+        </button>
+        <button class="text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 py-2 rounded transition ${canDel ? '' : 'hidden'}" data-action="delete">
+          Xóa
+        </button>
+      </div>
+    `;
+
+    div.querySelector('[data-action="tasks"]').onclick = (e) => { e.stopPropagation(); selectProject(p); };
+    div.querySelector('[data-action="detail"]').onclick = (e) => { e.stopPropagation(); showProjectDetail(p); };
+
+    const btnEdit = div.querySelector('[data-action="edit"]');
+    if (btnEdit) btnEdit.onclick = (e) => { e.stopPropagation(); showProjectEdit(p); };
+
+    const btnDel = div.querySelector('[data-action="delete"]');
+    if (btnDel) btnDel.onclick = (e) => { e.stopPropagation(); deleteProject(p); };
+
+    div.onclick = () => selectProject(p);
+    list.appendChild(div);
+  }
+
+  lucide.createIcons();
+}
     function selectProject(p) {
       activeProjectId = p.id;
       activeProjectName = p.name;
@@ -994,19 +1043,39 @@
     }
 
     async function addProject() {
-      if (!requirePerm('project.create', 'Chỉ Giám đốc/Quản lý được tạo dự án.')) return;
-      const name = prompt('Nhập tên dự án mới:');
-      if (!name) return;
-      showLoading(true);
-      const code = 'PRJ-' + Date.now(); // unique
-      const { error } = await db.from('projects').insert([{ name, code, status: 'active', created_by: currentUser.id }]);
-      showLoading(false);
-      if (error) return toast('Tạo dự án thất bại', error.message, 'danger');
-      toast('Thành công', 'Đã tạo dự án.', 'success');
-      await audit('project.create', 'projects', null, { name });
-      loadProjects();
-      loadDashboard();
-    }
+  if (!requirePerm('project.create', 'Chỉ Giám đốc/Quản lý được tạo dự án.')) return;
+
+  const name = (prompt('Nhập tên dự án mới:') || '').trim();
+  if (!name) return;
+
+  // optional
+  const description = (prompt('Mô tả (tuỳ chọn):') || '').trim() || null;
+
+  showLoading(true);
+  try {
+    const code = 'PRJ-' + Date.now(); // unique
+    const { data, error } = await db
+      .from('projects')
+      .insert([{ name, code, status: 'active', description, created_by: currentUser.id }])
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    toast('Thành công', 'Đã tạo dự án.', 'success');
+    await audit('project.create', 'projects', data?.id || null, { name, code });
+
+    // auto select created project
+    if (data?.id) selectProject(data);
+
+    await loadProjects();
+    await loadDashboard();
+  } catch (e) {
+    toast('Tạo dự án thất bại', e?.message || String(e), 'danger');
+  } finally {
+    showLoading(false);
+  }
+}
 
     async function loadTasks() {
       const list = document.getElementById('taskList');
@@ -1101,6 +1170,116 @@
       `;
       openModal('Chi tiết dự án', html);
     }
+
+async function showProjectEdit(p) {
+  if (!requirePerm('project.update', 'Chỉ Giám đốc/Quản lý được sửa dự án.')) return;
+
+  const html = `
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Tên dự án</label>
+        <input id="editProjectName" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value="${escapeHtml(p.name || '')}" />
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Mã dự án</label>
+          <input id="editProjectCode" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" value="${escapeHtml(p.code || '')}" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Trạng thái</label>
+          <select id="editProjectStatus" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+            <option value="active" ${String(p.status||'').toLowerCase()==='active'?'selected':''}>Active</option>
+            <option value="paused" ${String(p.status||'').toLowerCase()==='paused'?'selected':''}>Paused</option>
+            <option value="completed" ${String(p.status||'').toLowerCase()==='completed'?'selected':''}>Completed</option>
+            <option value="archived" ${String(p.status||'').toLowerCase()==='archived'?'selected':''}>Archived</option>
+          </select>
+          <p class="text-xs text-slate-500 mt-1">* Archived sẽ ẩn dự án khỏi danh sách (xóa mềm).</p>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Mô tả</label>
+        <textarea id="editProjectDesc" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"></textarea>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <button class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-sm" onclick="closeModal()">Hủy</button>
+        <button class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold" id="btnSaveProject">Lưu</button>
+      </div>
+    </div>
+  `;
+  openModal('Sửa dự án', html);
+  // set textarea value safely
+  const descEl = document.getElementById('editProjectDesc');
+  if (descEl) descEl.value = p.description || '';
+
+  document.getElementById('btnSaveProject').onclick = async () => {
+    const name = (document.getElementById('editProjectName').value || '').trim();
+    const code = (document.getElementById('editProjectCode').value || '').trim() || null;
+    const status = document.getElementById('editProjectStatus').value;
+    const description = (document.getElementById('editProjectDesc').value || '').trim() || null;
+
+    if (!name) return toast('Thiếu tên', 'Vui lòng nhập tên dự án.', 'warning');
+
+    showLoading(true);
+    try {
+      const { error } = await db.from('projects').update({ name, code, status, description }).eq('id', p.id);
+      if (error) throw error;
+
+      await audit('project.update', 'projects', p.id, { name, code, status });
+      toast('Thành công', 'Đã cập nhật dự án.', 'success');
+      closeModal();
+
+      // if currently selected project got archived -> clear right panel
+      if (activeProjectId === p.id && String(status).toLowerCase() === 'archived') {
+        activeProjectId = null;
+        activeProjectName = '';
+        document.getElementById('taskHeader').innerText = 'Chọn dự án để xem Task';
+        document.getElementById('taskSection').classList.add('hidden');
+        document.getElementById('taskList').innerHTML = '';
+      }
+
+      await loadProjects();
+      await loadDashboard();
+    } catch (e) {
+      toast('Lưu thất bại', e?.message || String(e), 'danger');
+    } finally {
+      showLoading(false);
+    }
+  };
+}
+
+async function deleteProject(p) {
+  if (!requirePerm('project.delete', 'Chỉ Giám đốc/Quản lý được xóa dự án.')) return;
+
+  const ok = confirm(`Xóa dự án "${p.name}"? (xóa mềm: chuyển status=archived)`);
+  if (!ok) return;
+
+  showLoading(true);
+  try {
+    const { error } = await db.from('projects').update({ status: 'archived' }).eq('id', p.id);
+    if (error) throw error;
+
+    await audit('project.delete', 'projects', p.id, { status: 'archived' });
+    toast('Đã xóa', 'Dự án đã được đưa vào Archived.', 'success');
+
+    if (activeProjectId === p.id) {
+      activeProjectId = null;
+      activeProjectName = '';
+      document.getElementById('taskHeader').innerText = 'Chọn dự án để xem Task';
+      document.getElementById('taskSection').classList.add('hidden');
+      document.getElementById('taskList').innerHTML = '';
+    }
+
+    await loadProjects();
+    await loadDashboard();
+  } catch (e) {
+    toast('Xóa thất bại', e?.message || String(e), 'danger');
+  } finally {
+    showLoading(false);
+  }
+}
 
     async function showTaskDetail(t) {
       const html = `
