@@ -988,7 +988,8 @@
       const name = prompt('Nhập tên dự án mới:');
       if (!name) return;
       showLoading(true);
-      const { error } = await db.from('projects').insert([{ name, code: 'NEW', status: 'active', created_by: currentUser.id }]);
+      const code = 'PRJ-' + Date.now(); // unique
+      const { error } = await db.from('projects').insert([{ name, code, status: 'active', created_by: currentUser.id }]);
       showLoading(false);
       if (error) return toast('Tạo dự án thất bại', error.message, 'danger');
       toast('Thành công', 'Đã tạo dự án.', 'success');
